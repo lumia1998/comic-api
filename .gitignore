@@ -1,0 +1,25 @@
+# Sensitive credentials and tokens
+.bika_token
+.env
+*.token
+*.cache
+
+# Python environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Local agents and skills caches (optional, but keeps repo focused on core API)
+.agents/
+skills-lock.json
+
+# Logs and databases
+*.log
+*.sqlite
+.system_generated/
