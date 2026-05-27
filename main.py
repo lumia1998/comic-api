@@ -87,26 +87,29 @@ async def api_leaderboard(source: str, mode: str = "day", page: int = 1):
     return {"success": False, "error": "Invalid source"}
 
 @app.get("/api/{source}/latest")
-async def api_latest(source: str, page: int = 1):
+async def api_latest(source: str, page: int = 1, sort: str = "dd"):
     """
-    最近更新接口
+    最近更新接口 (哔咊支持排序)
+    sort: dd=最新上架, da=最旧上架, ld=最多喜欢, vd=最多观看
     http://127.0.0.1:8000/api/jm/latest?page=1
+    http://127.0.0.1:8000/api/bika/latest?page=1&sort=ld
     """
     if source == "bika":
-        return {"success": True, "source": "bika", "data": aggregator.bika.get_latest(page)}
+        return {"success": True, "source": "bika", "data": aggregator.bika.get_latest(page, sort)}
     elif source == "jm":
         return {"success": True, "source": "jm", "data": aggregator.jm.get_latest(page)}
     return {"success": False, "error": "Invalid source"}
 
 @app.get("/api/{source}/category")
-async def api_category(source: str, name: str, page: int = 1):
+async def api_category(source: str, name: str, page: int = 1, sort: str = "dd"):
     """
-    分类筛选接口
-    - name: 哔咔分类(例如 '嗶咔漢化', '同人') / 禁漫分类(例如 'doujin', 'single')
-    http://127.0.0.1:8000/api/bika/category?name=同人
+    分类筛选接口 (哔咊支持排序)
+    - name: 哔咊分类(例如 '嗶咊漢化', '同人') / 禁漫分类(例如 'doujin', 'single')
+    - sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看 (仅 bika 有效)
+    http://127.0.0.1:8000/api/bika/category?name=同人&sort=ld
     """
     if source == "bika":
-        return {"success": True, "source": "bika", "data": aggregator.bika.get_category_comics(name, page)}
+        return {"success": True, "source": "bika", "data": aggregator.bika.get_category_comics(name, page, sort)}
     elif source == "jm":
         return {"success": True, "source": "jm", "data": aggregator.jm.get_category_comics(name, page)}
     return {"success": False, "error": "Invalid source"}

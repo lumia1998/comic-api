@@ -115,7 +115,7 @@
       <div class="filter-row">
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">源平台</label>
-          <select class="select-minimal" id="category-source" onchange="updateCategoryOptions()">
+          <select class="select-minimal" id="category-source" onchange="updateCategoryOptions(); updateBikaSortVisibility('category')">
             <option value="jm">禁漫天堂</option>
             <option value="bika">哔咔漫画</option>
           </select>
@@ -124,6 +124,15 @@
           <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">分类选择</label>
           <select class="select-minimal" id="category-name">
             <!-- 动态生成 -->
+          </select>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;" id="category-sort-group" style="display:none;">
+          <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">排序方式 (哔咔)</label>
+          <select class="select-minimal" id="category-sort">
+            <option value="dd">最新上架</option>
+            <option value="ld">最多喜欢</option>
+            <option value="vd">最多观看</option>
+            <option value="da">最旧上架</option>
           </select>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
@@ -154,9 +163,18 @@
       <div class="filter-row">
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">源平台</label>
-          <select class="select-minimal" id="latest-source">
+          <select class="select-minimal" id="latest-source" onchange="updateBikaSortVisibility('latest')">
             <option value="jm">禁漫天堂</option>
             <option value="bika">哔咔漫画</option>
+          </select>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;" id="latest-sort-group">
+          <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">排序方式 (哔咔)</label>
+          <select class="select-minimal" id="latest-sort">
+            <option value="dd">最新上架</option>
+            <option value="ld">最多喜欢</option>
+            <option value="vd">最多观看</option>
+            <option value="da">最旧上架</option>
           </select>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
@@ -169,12 +187,12 @@
             <option value="5">第 5 页</option>
           </select>
         </div>
-        <button class="btn-primary" onclick="loadLatest()">获取更新</button>
+        <button class="btn-primary" onclick="loadLatest()">获取列表</button>
       </div>
 
       <div class="loading" id="latest-loader">
         <div class="spinner"></div>
-        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在拉取最近更新的漫画...</p>
+        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在拉取漫画列表...</p>
       </div>
 
       <div id="latest-container">
@@ -298,6 +316,8 @@
     document.addEventListener("DOMContentLoaded", () => {
       updateLeaderboardModes();
       updateCategoryOptions();
+      updateBikaSortVisibility('category');
+      updateBikaSortVisibility('latest');
     });
 
     // 1. Tab 开关逻辑
@@ -323,6 +343,15 @@
       } else if (tabId === "category" && !document.getElementById("category-container").querySelector(".grids-container")) {
         loadCategory();
       }
+    }
+
+    // 哔咔排序选项个性显示/隐藏（只对 bika 有效）
+    function updateBikaSortVisibility(tab) {
+      const sourceId = tab === 'category' ? 'category-source' : 'latest-source';
+      const sortGroupId = tab === 'category' ? 'category-sort-group' : 'latest-sort-group';
+      const src = document.getElementById(sourceId).value;
+      const sortGroup = document.getElementById(sortGroupId);
+      sortGroup.style.display = (src === 'bika') ? 'flex' : 'none';
     }
 
     // 联动更新：排行榜的时间过滤选项
@@ -363,6 +392,9 @@
         opt.innerText = c.label;
         catSelect.appendChild(opt);
       });
+
+      // 同时更新排序选项显示
+      updateBikaSortVisibility('category');
     }
 
     // 生成通用的漫画卡片栅格 (Shadcn Grid Layout)
@@ -510,6 +542,7 @@
       const source = document.getElementById("category-source").value;
       const name = document.getElementById("category-name").value;
       const page = document.getElementById("category-page").value;
+      const sort = (source === "bika") ? document.getElementById("category-sort").value : "dd";
 
       const loader = document.getElementById("category-loader");
       const container = document.getElementById("category-container");
@@ -518,7 +551,7 @@
       container.innerHTML = "";
 
       try {
-        const res = await fetch(`/api/${source}/category?name=${encodeURIComponent(name)}&page=${page}`);
+        const res = await fetch(`/api/${source}/category?name=${encodeURIComponent(name)}&page=${page}&sort=${sort}`);
         const result = await res.json();
         loader.style.display = "none";
 
@@ -538,6 +571,7 @@
     async function loadLatest() {
       const source = document.getElementById("latest-source").value;
       const page = document.getElementById("latest-page").value;
+      const sort = (source === "bika") ? document.getElementById("latest-sort").value : "dd";
 
       const loader = document.getElementById("latest-loader");
       const container = document.getElementById("latest-container");
@@ -546,18 +580,18 @@
       container.innerHTML = "";
 
       try {
-        const res = await fetch(`/api/${source}/latest?page=${page}`);
+        const res = await fetch(`/api/${source}/latest?page=${page}&sort=${sort}`);
         const result = await res.json();
         loader.style.display = "none";
 
         if (result.success) {
           container.innerHTML = buildComicsGrid(result.data);
         } else {
-          container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">获取更新列表失败: ${result.error || "未知原因"}</div>`;
+          container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">获取列表失败: ${result.error || "未知原因"}</div>`;
         }
       } catch (err) {
         loader.style.display = "none";
-        container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">网络异常，拉取更新超时</div>`;
+        container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">网络异常，拉取超时</div>`;
         console.error(err);
       }
     }

@@ -309,23 +309,33 @@ class BikaClient(BaseClient):
             print(f"[BikaClient] get_leaderboard error: {e}")
             return []
 
-    def get_category_comics(self, category_name: str, page: int = 1) -> List[Dict[str, Any]]:
-        """筛选分类下的本子"""
+    def get_category_comics(self, category_name: str, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
+        """
+        筛选分类下的本子
+        sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看
+        """
         if not self.authorization:
             return []
+        valid_sorts = {"dd", "da", "ld", "vd"}
+        s = sort if sort in valid_sorts else "dd"
         try:
-            res = self.bika_request("comics", method="GET", params={"page": str(page), "c": category_name, "s": "dd"})
+            res = self.bika_request("comics", method="GET", params={"page": str(page), "c": category_name, "s": s})
             return self._parse_comics_list(res)
         except Exception as e:
             print(f"[BikaClient] get_category_comics error: {e}")
             return []
 
-    def get_latest(self, page: int = 1) -> List[Dict[str, Any]]:
-        """获取最近更新本子"""
+    def get_latest(self, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
+        """
+        获取本子列表（支持排序）
+        sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看
+        """
         if not self.authorization:
             return []
+        valid_sorts = {"dd", "da", "ld", "vd"}
+        s = sort if sort in valid_sorts else "dd"
         try:
-            res = self.bika_request("comics", method="GET", params={"page": str(page), "s": "dd"})
+            res = self.bika_request("comics", method="GET", params={"page": str(page), "s": s})
             return self._parse_comics_list(res)
         except Exception as e:
             print(f"[BikaClient] get_latest error: {e}")
