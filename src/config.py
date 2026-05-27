@@ -20,3 +20,4 @@ class Config:
     BIKA_BACKUP_API_BASE = "https://picaapi.go2778.com/"
     BIKA_API_KEY = "C69BAF41DA5ABD1FFEDC6D2FEA56B"
     BIKA_SECRET_KEY = "~d}$Q7$eIni=V)9\\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn"
+

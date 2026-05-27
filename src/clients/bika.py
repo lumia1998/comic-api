@@ -1,5 +1,6 @@
 import time
 import os
+from pathlib import Path
 import uuid
 import hmac
 import hashlib
@@ -15,7 +16,7 @@ class BikaClient(BaseClient):
         super().__init__()
         self.api_base = Config.BIKA_DEFAULT_API_BASE
         self.authorization = ""
-        self.token_file = ".bika_token"
+        self.token_file = str(Path(__file__).resolve().parents[2] / ".bika_token")
         
         # 自动加载 Token
         try:

@@ -19,6 +19,11 @@ templates = Jinja2Templates(directory="src/web/templates")
 
 aggregator = AggregatorService()
 
+@app.get("/health")
+async def health_check():
+    """健康检查端点"""
+    return {"status": "ok"}
+
 @app.get("/", response_class=HTMLResponse)
 async def home_index(request: Request):
     """前端首页"""
@@ -63,8 +68,8 @@ async def api_bika_login(data: dict):
 async def api_random(source: str):
     """
     随机本子/推荐接口
-    http://127.0.0.1:8000/api/bika/random
-    http://127.0.0.1:8000/api/jm/random (使用推荐替代)
+    http://127.0.0.1:8699/api/bika/random
+    http://127.0.0.1:8699/api/jm/random (使用推荐替代)
     """
     if source == "bika":
         return {"success": True, "source": "bika", "data": aggregator.bika.get_random()}
@@ -78,10 +83,16 @@ async def api_leaderboard(source: str, mode: str = "day", page: int = 1):
     排行榜接口
     - source: jm / bika
     - mode: day (日榜), week (周榜), month (月榜), total (总榜，仅限 jm)
-    http://127.0.0.1:8000/api/jm/leaderboard?mode=week
+    http://127.0.0.1:8699/api/jm/leaderboard?mode=week
     """
     if source == "bika":
-        return {"success": True, "source": "bika", "data": aggregator.bika.get_leaderboard(mode)}
+        data = aggregator.bika.get_leaderboard(mode)
+        # 客户端侧分页 (每页 20 条结果)
+        page_size = 20
+        start = (page - 1) * page_size
+        end = start + page_size
+        sliced_data = data[start:end] if start < len(data) else []
+        return {"success": True, "source": "bika", "data": sliced_data}
     elif source == "jm":
         return {"success": True, "source": "jm", "data": aggregator.jm.get_leaderboard(mode, page)}
     return {"success": False, "error": "Invalid source"}
@@ -89,10 +100,10 @@ async def api_leaderboard(source: str, mode: str = "day", page: int = 1):
 @app.get("/api/{source}/latest")
 async def api_latest(source: str, page: int = 1, sort: str = "dd"):
     """
-    最近更新接口 (哔咊支持排序)
+    最近更新接口 (哔咔支持排序)
     sort: dd=最新上架, da=最旧上架, ld=最多喜欢, vd=最多观看
-    http://127.0.0.1:8000/api/jm/latest?page=1
-    http://127.0.0.1:8000/api/bika/latest?page=1&sort=ld
+    http://127.0.0.1:8699/api/jm/latest?page=1
+    http://127.0.0.1:8699/api/bika/latest?page=1&sort=ld
     """
     if source == "bika":
         return {"success": True, "source": "bika", "data": aggregator.bika.get_latest(page, sort)}
@@ -107,8 +118,8 @@ async def api_category(source: str, name: str, page: int = 1, sort: str = "dd"):
     - name: 哔咔分类(例如 '嗶咔漢化', '同人') / 禁漫分类(例如 'doujin', 'single')
     - sort 通用值: dd=最新, ld=最多喜欢/收藏, vd=最多观看, da=最旧(仅bika)
     - sort 禁漫专属值: new=最新, mv=最多观看, tf=最多收藏, mp=最多指名
-    http://127.0.0.1:8000/api/bika/category?name=同人&sort=ld
-    http://127.0.0.1:8000/api/jm/category?name=doujin&sort=mv
+    http://127.0.0.1:8699/api/bika/category?name=同人&sort=ld
+    http://127.0.0.1:8699/api/jm/category?name=doujin&sort=mv
     """
     if source == "bika":
         return {"success": True, "source": "bika", "data": aggregator.bika.get_category_comics(name, page, sort)}
@@ -118,4 +129,4 @@ async def api_category(source: str, name: str, page: int = 1, sort: str = "dd"):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8699, reload=True)
