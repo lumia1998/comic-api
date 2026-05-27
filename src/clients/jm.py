@@ -374,13 +374,27 @@ class JmClient(BaseClient):
             print(f"[JmClient] get_leaderboard error: {e}")
             return []
 
-    def get_category_comics(self, category_name: str, page: int = 1) -> List[Dict[str, Any]]:
-        """分类过滤 (同人/单本/短篇/韩漫 等)"""
+    def get_category_comics(self, category_name: str, page: int = 1, sort: str = "new") -> List[Dict[str, Any]]:
+        """
+        分类过滤 (同人/单本/短篇/韩漫 等)
+        sort: new=最新, mv=最多观看, tf=最多收藏(喜欢), mp=最多指名
+        """
+        # 映射统一的 sort 关键词到 JM 的 o 参数
+        order_map = {
+            "new": "new",   # 最新上架
+            "dd": "new",    # bika 别名兼容
+            "mv": "mv",    # 最多观看
+            "vd": "mv",    # bika 别名兼容
+            "tf": "tf",    # 最多收藏/喜欢
+            "ld": "tf",    # bika 别名兼容
+            "mp": "mp",    # 最多指名
+        }
+        order = order_map.get(sort, "new")
         try:
             res = self.jm_request("/categories/filter", method="GET", params={
                 "page": str(page - 1),
                 "c": category_name,
-                "o": "new"
+                "o": order
             })
             content = res.get("content", [])
             return self._parse_jm_comics(content)

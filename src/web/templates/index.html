@@ -127,12 +127,9 @@
           </select>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;" id="category-sort-group" style="display:none;">
-          <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;">排序方式 (哔咔)</label>
+          <label style="font-size: 0.75rem; color: var(--muted-foreground); font-weight: 500;" id="category-sort-label">排序方式</label>
           <select class="select-minimal" id="category-sort">
-            <option value="dd">最新上架</option>
-            <option value="ld">最多喜欢</option>
-            <option value="vd">最多观看</option>
-            <option value="da">最旧上架</option>
+            <!-- 动态更新 -->
           </select>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
@@ -345,13 +342,48 @@
       }
     }
 
-    // 哔咔排序选项个性显示/隐藏（只对 bika 有效）
+    // 动态更新排序选项（禁漫和哔咔选项不同）
+    const JM_SORT_OPTIONS = [
+      { value: "new", label: "最新上架" },
+      { value: "mv",  label: "最多观看" },
+      { value: "tf",  label: "最多收藏/喜欢" },
+      { value: "mp",  label: "最多指名" },
+    ];
+    const BIKA_SORT_OPTIONS = [
+      { value: "dd", label: "最新上架" },
+      { value: "ld", label: "最多喜欢" },
+      { value: "vd", label: "最多观看" },
+      { value: "da", label: "最旧上架" },
+    ];
+
     function updateBikaSortVisibility(tab) {
       const sourceId = tab === 'category' ? 'category-source' : 'latest-source';
       const sortGroupId = tab === 'category' ? 'category-sort-group' : 'latest-sort-group';
+      const sortSelectId = tab === 'category' ? 'category-sort' : 'latest-sort';
+      const sortLabelId = tab === 'category' ? 'category-sort-label' : null;
+
       const src = document.getElementById(sourceId).value;
       const sortGroup = document.getElementById(sortGroupId);
-      sortGroup.style.display = (src === 'bika') ? 'flex' : 'none';
+      const sortSelect = document.getElementById(sortSelectId);
+      const options = (src === 'jm') ? JM_SORT_OPTIONS : BIKA_SORT_OPTIONS;
+
+      // 始终显示排序框（两平台都支持）
+      sortGroup.style.display = 'flex';
+
+      // 更新标签
+      if (sortLabelId) {
+        const label = document.getElementById(sortLabelId);
+        if (label) label.innerText = (src === 'jm') ? '排序方式 (禁漫)' : '排序方式 (哔咔)';
+      }
+
+      // 重新填充选项
+      sortSelect.innerHTML = '';
+      options.forEach(opt => {
+        const el = document.createElement('option');
+        el.value = opt.value;
+        el.innerText = opt.label;
+        sortSelect.appendChild(el);
+      });
     }
 
     // 联动更新：排行榜的时间过滤选项
@@ -542,7 +574,7 @@
       const source = document.getElementById("category-source").value;
       const name = document.getElementById("category-name").value;
       const page = document.getElementById("category-page").value;
-      const sort = (source === "bika") ? document.getElementById("category-sort").value : "dd";
+      const sort = document.getElementById("category-sort").value;
 
       const loader = document.getElementById("category-loader");
       const container = document.getElementById("category-container");
@@ -571,7 +603,7 @@
     async function loadLatest() {
       const source = document.getElementById("latest-source").value;
       const page = document.getElementById("latest-page").value;
-      const sort = (source === "bika") ? document.getElementById("latest-sort").value : "dd";
+      const sort = document.getElementById("latest-sort").value;
 
       const loader = document.getElementById("latest-loader");
       const container = document.getElementById("latest-container");
