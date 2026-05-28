@@ -1,6 +1,7 @@
 import os
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse
+import re
+from fastapi import FastAPI, Request, Query, BackgroundTasks
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from src.services.aggregator import AggregatorService
@@ -59,6 +60,48 @@ async def api_bika_login(data: dict):
     try:
         token = aggregator.bika.login(account, password)
         return {"success": True, "token": token}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/download/{source}/{comic_id}/{chapter_id}")
+async def api_download_chapter(
+    source: str,
+    comic_id: str,
+    chapter_id: str,
+    background_tasks: BackgroundTasks,
+    title: str = Query(""),
+    chapter: str = Query("")
+):
+    """下载章节并打包成自适应压缩的 PDF"""
+    try:
+        pdf_path = await aggregator.download_chapter_pdf(source, comic_id, chapter_id)
+        
+        # Build a safe and clean filename for the user
+        safe_title = title.replace(" ", "_").strip() if title else comic_id
+        safe_ch = chapter.replace(" ", "_").strip() if chapter else chapter_id
+        filename = f"{safe_title}_{safe_ch}.pdf"
+        
+        # Remove all spaces from the filename
+        filename = re.sub(r'[\\/:*?"<>|\s]', "_", filename)
+        filename = re.sub(r'_+', '_', filename).strip('_')
+        if not filename.endswith(".pdf"):
+            filename += ".pdf"
+
+        # Register background task to clean up the temporary PDF file
+        def remove_temp_file(path: str):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
+                print(f"[comic-api] Error removing temp file {path}: {e}")
+
+        background_tasks.add_task(remove_temp_file, pdf_path)
+
+        return FileResponse(
+            path=pdf_path,
+            filename=filename,
+            media_type="application/pdf"
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 

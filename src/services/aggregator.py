@@ -1,6 +1,14 @@
 import asyncio
+import os
+import io
+import math
+import shutil
+import tempfile
+import urllib.parse
 from difflib import SequenceMatcher
 from typing import List, Dict, Any
+from PIL import Image
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.clients import JmClient, BikaClient
 
 class AggregatorService:
@@ -101,3 +109,117 @@ class AggregatorService:
         except Exception as e:
             print(f"[Aggregator] get_chapter_images error source={source} ch_id={chapter_id}: {e}")
             return []
+
+    def _download_image(self, client: Any, url: str) -> bytes:
+        """使用 Client 自身的 BaseClient.request 来下载图片二进制"""
+        headers = {
+            "Referer": url,
+            "User-Agent": client.ua
+        }
+        res = client.request("GET", url, headers=headers, timeout=30)
+        if res.status_code != 200:
+            raise Exception(f"Failed to download image from {url}: status={res.status_code}")
+        return res.content
+
+    def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, concurrency: int = 4) -> List[str]:
+        results = {}
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {
+                pool.submit(self._download_image, client, url): idx
+                for idx, url in enumerate(urls)
+            }
+            for fut in as_completed(futures):
+                idx = futures[fut]
+                try:
+                    data = fut.result()
+                    # Determine extension from url or fallback to .jpg
+                    path_str = urllib.parse.urlparse(urls[idx]).path.lower()
+                    suffix = ".jpg"
+                    for ext in [".png", ".webp", ".gif", ".jpg", ".jpeg"]:
+                        if path_str.endswith(ext):
+                            suffix = ext
+                            break
+                    p = os.path.join(out_dir, f"{idx+1:04d}{suffix}")
+                    with open(p, "wb") as f:
+                        f.write(data)
+                    results[idx] = p
+                except Exception as e:
+                    raise Exception(f"图片 {idx+1} 下载失败: {e}")
+        if len(results) != len(urls):
+            raise Exception("部分图片下载失败")
+        return [results[i] for i in sorted(results)]
+
+    def _create_compressed_pdf(self, image_paths: List[str], pdf_path: str, limit_bytes: float) -> None:
+        qualities = [85, 60, 40, 20]
+        img_list = []
+        try:
+            for p in sorted(image_paths, key=lambda x: os.path.basename(x)):
+                img = Image.open(p)
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img_list.append(img)
+                
+            for q in qualities:
+                print(f"[comic-api] 尝试以 JPEG 质量 {q} 压缩 PDF ...", flush=True)
+                bio = io.BytesIO()
+                img_list[0].save(bio, "PDF", save_all=True, append_images=img_list[1:], quality=q, optimize=True)
+                pdf_bytes = bio.getvalue()
+                size = len(pdf_bytes)
+                print(f"[comic-api] 压缩结果体积: {size / (1024 * 1024):.2f}MB, 目标限额: {limit_bytes / (1024 * 1024):.2f}MB", flush=True)
+                
+                if size <= limit_bytes or q == qualities[-1]:
+                    if size > limit_bytes:
+                        print(f"[comic-api] 警告：已尝试最低质量，文件体积 ({size / (1024 * 1024):.1f}MB) 仍超出限制，将直接发送。", flush=True)
+                    with open(pdf_path, "wb") as f:
+                        f.write(pdf_bytes)
+                    break
+        finally:
+            for img in img_list:
+                try:
+                    img.close()
+                except Exception:
+                    pass
+
+    async def download_chapter_pdf(self, source: str, comic_id: str, chapter_id: str) -> str:
+        """下载章节并打包成自适应压缩的 PDF，返回本地临时 PDF 路径"""
+        client = None
+        if source == "jm":
+            client = self.jm
+        elif source == "bika":
+            client = self.bika
+        if not client:
+            raise Exception(f"Invalid source: {source}")
+
+        # Fetch chapter images first
+        image_urls = await self.get_chapter_images(source, comic_id, chapter_id)
+        if not image_urls:
+            raise Exception("该章节没有图片，或平台限制访问")
+
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp(prefix="comic_api_dl_")
+        try:
+            # Download images in parallel
+            loop = asyncio.get_running_loop()
+            all_paths = await loop.run_in_executor(
+                None, self._download_images_parallel, client, image_urls, temp_dir, 4
+            )
+
+            # Package and dynamically compress to PDF
+            # We will generate a final PDF in the system temp directory and return its path
+            fd, pdf_path = tempfile.mkstemp(prefix="comic_", suffix=".pdf")
+            os.close(fd)
+
+            total = len(all_paths)
+            limit_bytes = 10 * math.ceil(total / 50) * 1024 * 1024
+
+            await loop.run_in_executor(
+                None, self._create_compressed_pdf, all_paths, pdf_path, limit_bytes
+            )
+            return pdf_path
+        finally:
+            # Clean up image files and directory, but NOT the generated pdf_path itself
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
