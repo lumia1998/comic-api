@@ -154,9 +154,13 @@ class JmClient(BaseClient):
                 kwargs["data"] = data
                 headers["Content-Type"] = "application/x-www-form-urlencoded"
 
-        res = self.request(method, url, **kwargs)
-        if res.status_code < 200 or res.status_code >= 300:
-            raise Exception(f"JM request failed with status: {res.status_code}")
+        try:
+            res = self.request(method, url, **kwargs)
+            if res.status_code < 200 or res.status_code >= 300:
+                raise Exception(f"JM request failed with status: {res.status_code}")
+        except Exception as e:
+            self.host_resolved = False  # Reset on error to allow failover next time
+            raise e
 
         decrypted = self.decrypt_response(res.content, ts)
         

@@ -133,8 +133,7 @@ class BikaClient(BaseClient):
     def search(self, keyword: str, page: int = 1) -> List[Dict[str, Any]]:
         """搜索漫画"""
         if not self.authorization:
-            print("[BikaClient] Cannot search: No authorization token. Please log in first.")
-            return []
+            raise Exception("哔咔未登录，请先在后台绑定/登录账号。")
             
         try:
             res = self.bika_request("comics/advanced-search", method="POST", params={
@@ -178,7 +177,7 @@ class BikaClient(BaseClient):
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
         """获取详情并加载全部章节分页"""
         if not self.authorization:
-            return {}
+            raise Exception("哔咔未登录，请先在后台绑定/登录账号。")
             
         try:
             res = self.bika_request(f"comics/{comic_id}", method="GET")
@@ -231,7 +230,7 @@ class BikaClient(BaseClient):
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
         """获取章节页面图片"""
         if not self.authorization:
-            return []
+            raise Exception("哔咔未登录，请先在后台绑定/登录账号。")
             
         try:
             image_urls = []

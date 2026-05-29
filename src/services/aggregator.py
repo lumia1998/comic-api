@@ -121,7 +121,7 @@ class AggregatorService:
             raise Exception(f"Failed to download image from {url}: status={res.status_code}")
         return res.content
 
-    def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, concurrency: int = 4) -> List[str]:
+    def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, source: str = "", chapter_id: str = "", concurrency: int = 4) -> List[str]:
         results = {}
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             futures = {
@@ -132,13 +132,57 @@ class AggregatorService:
                 idx = futures[fut]
                 try:
                     data = fut.result()
+                    
+                    # Apply JmComic descrambling if source is jm
+                    if source == "jm" and chapter_id:
+                        try:
+                            ch_id = int(chapter_id)
+                            # Check scramble thresholds
+                            if ch_id >= 268850:
+                                scramble_num = 10
+                            elif ch_id >= 220980:
+                                scramble_num = 8
+                            else:
+                                scramble_num = 0
+                                
+                            if scramble_num > 0:
+                                from PIL import Image
+                                import io
+                                img = Image.open(io.BytesIO(data))
+                                width, height = img.size
+                                slice_height = height // scramble_num
+                                remainder = height % scramble_num
+                                
+                                new_img = Image.new(img.mode, (width, height))
+                                
+                                # Reassemble the first scramble_num - 1 slices
+                                for i in range(scramble_num - 1):
+                                    src_y = slice_height * (scramble_num - 2 - i)
+                                    dest_y = slice_height * i
+                                    box = (0, src_y, width, src_y + slice_height)
+                                    slice_img = img.crop(box)
+                                    new_img.paste(slice_img, (0, dest_y))
+                                    
+                                # Reassemble the last slice (remainder)
+                                src_y = slice_height * (scramble_num - 1)
+                                dest_y = src_y
+                                box = (0, src_y, width, height)
+                                slice_img = img.crop(box)
+                                new_img.paste(slice_img, (0, dest_y))
+                                
+                                output_bytes = io.BytesIO()
+                                new_img.save(output_bytes, format=img.format or "JPEG")
+                                data = output_bytes.getvalue()
+                        except Exception as e:
+                            print(f"[comic-api] JmComic descramble error: {e}")
+                    
                     # Determine extension from url or fallback to .jpg
                     path_str = urllib.parse.urlparse(urls[idx]).path.lower()
                     suffix = ".jpg"
                     for ext in [".png", ".webp", ".gif", ".jpg", ".jpeg"]:
-                        if path_str.endswith(ext):
-                            suffix = ext
-                            break
+                          if path_str.endswith(ext):
+                              suffix = ext
+                              break
                     p = os.path.join(out_dir, f"{idx+1:04d}{suffix}")
                     with open(p, "wb") as f:
                         f.write(data)
@@ -201,7 +245,7 @@ class AggregatorService:
             # Download images in parallel
             loop = asyncio.get_running_loop()
             all_paths = await loop.run_in_executor(
-                None, self._download_images_parallel, client, image_urls, temp_dir, 4
+                None, self._download_images_parallel, client, image_urls, temp_dir, source, chapter_id, 4
             )
 
             # Package and dynamically compress to PDF
@@ -209,13 +253,21 @@ class AggregatorService:
             fd, pdf_path = tempfile.mkstemp(prefix="comic_", suffix=".pdf")
             os.close(fd)
 
-            total = len(all_paths)
-            limit_bytes = 10 * math.ceil(total / 50) * 1024 * 1024
+            try:
+                total = len(all_paths)
+                limit_bytes = 10 * math.ceil(total / 50) * 1024 * 1024
 
-            await loop.run_in_executor(
-                None, self._create_compressed_pdf, all_paths, pdf_path, limit_bytes
-            )
-            return pdf_path
+                await loop.run_in_executor(
+                    None, self._create_compressed_pdf, all_paths, pdf_path, limit_bytes
+                )
+                return pdf_path
+            except Exception as e:
+                try:
+                    if os.path.exists(pdf_path):
+                        os.remove(pdf_path)
+                except Exception:
+                    pass
+                raise e
         finally:
             # Clean up image files and directory, but NOT the generated pdf_path itself
             try:
