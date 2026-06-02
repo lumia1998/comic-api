@@ -12,6 +12,12 @@ from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.clients import JmClient, BikaClient
 
+
+class ComicApiError(RuntimeError):
+    def __init__(self, message: str, status_code: int = 500):
+        super().__init__(message)
+        self.status_code = status_code
+
 class AggregatorService:
     def __init__(self):
         self.jm = JmClient()
@@ -205,36 +211,62 @@ class AggregatorService:
             raise Exception("部分图片下载失败")
         return [results[i] for i in sorted(results)]
 
-    def _create_compressed_pdf(self, image_paths: List[str], pdf_path: str, limit_bytes: float) -> None:
-        qualities = [85, 60, 40, 20]
+    def _make_pdf_bytes(self, image_paths: List[str], quality: int, scale: float) -> bytes:
         img_list = []
+        resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
         try:
             for p in sorted(image_paths, key=lambda x: os.path.basename(x)):
-                img = Image.open(p)
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-                img_list.append(img)
-                
-            for q in qualities:
-                print(f"[comic-api] 尝试以 JPEG 质量 {q} 压缩 PDF ...", flush=True)
-                bio = io.BytesIO()
-                img_list[0].save(bio, "PDF", save_all=True, append_images=img_list[1:], quality=q, optimize=True)
-                pdf_bytes = bio.getvalue()
-                size = len(pdf_bytes)
-                print(f"[comic-api] 压缩结果体积: {size / (1024 * 1024):.2f}MB, 目标限额: {limit_bytes / (1024 * 1024):.2f}MB", flush=True)
-                
-                if size <= limit_bytes or q == qualities[-1]:
-                    if size > limit_bytes:
-                        print(f"[comic-api] 警告：已尝试最低质量，文件体积 ({size / (1024 * 1024):.1f}MB) 仍超出限制，将直接发送。", flush=True)
-                    with open(pdf_path, "wb") as f:
-                        f.write(pdf_bytes)
-                    break
+                with Image.open(p) as img:
+                    if img.mode != "RGB":
+                        work = img.convert("RGB")
+                    else:
+                        work = img.copy()
+                    if scale < 1.0:
+                        width, height = work.size
+                        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+                        work = work.resize(new_size, resampling)
+                    img_list.append(work)
+
+            if not img_list:
+                raise ComicApiError("该章节没有可打包的图片", status_code=404)
+
+            bio = io.BytesIO()
+            img_list[0].save(bio, "PDF", save_all=True, append_images=img_list[1:], quality=quality, optimize=True)
+            return bio.getvalue()
         finally:
             for img in img_list:
                 try:
                     img.close()
                 except Exception:
                     pass
+
+    def _create_compressed_pdf(self, image_paths: List[str], pdf_path: str, limit_bytes: float) -> None:
+        qualities = [85, 60, 40, 20]
+        scales = [1.0, 0.85, 0.7, 0.55]
+        last_pdf_bytes = b""
+        last_size = 0
+
+        for scale in scales:
+            for q in qualities:
+                scale_text = f", 缩放 {scale:.2f}x" if scale < 1.0 else ""
+                print(f"[comic-api] 尝试以 JPEG 质量 {q}{scale_text} 压缩 PDF ...", flush=True)
+                pdf_bytes = self._make_pdf_bytes(image_paths, q, scale)
+                size = len(pdf_bytes)
+                last_pdf_bytes = pdf_bytes
+                last_size = size
+                print(f"[comic-api] 压缩结果体积: {size / (1024 * 1024):.2f}MB, 目标限额: {limit_bytes / (1024 * 1024):.2f}MB", flush=True)
+
+                if size <= limit_bytes:
+                    with open(pdf_path, "wb") as f:
+                        f.write(pdf_bytes)
+                    return
+
+        print(
+            f"[comic-api] 警告：已尝试最低质量和最小缩放，文件体积 ({last_size / (1024 * 1024):.1f}MB) 仍超出限制，将直接发送。",
+            flush=True,
+        )
+        with open(pdf_path, "wb") as f:
+            f.write(last_pdf_bytes)
 
     def _encrypt_pdf(self, pdf_path: str, password: str) -> None:
         if not password:
@@ -274,12 +306,14 @@ class AggregatorService:
         elif source == "bika":
             client = self.bika
         if not client:
-            raise Exception(f"Invalid source: {source}")
+            raise ComicApiError(f"Invalid source: {source}", status_code=400)
+        if source == "bika" and not getattr(self.bika, "authorization", ""):
+            raise ComicApiError("哔咔功能需要先在 comic-api 后台绑定账号", status_code=401)
 
         # Fetch chapter images first
         image_urls = await self.get_chapter_images(source, comic_id, chapter_id)
         if not image_urls:
-            raise Exception("该章节没有图片，或平台限制访问")
+            raise ComicApiError("该章节没有图片，或平台限制访问", status_code=404)
 
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix="comic_api_dl_")
@@ -304,6 +338,12 @@ class AggregatorService:
                     None, self._create_compressed_pdf, all_paths, pdf_path, limit_bytes
                 )
                 await loop.run_in_executor(None, self._encrypt_pdf, pdf_path, password)
+                encrypted_size = os.path.getsize(pdf_path)
+                if encrypted_size > limit_bytes:
+                    print(
+                        f"[comic-api] 警告：加密后 PDF 体积 {encrypted_size / (1024 * 1024):.2f}MB 超出目标限额 {limit_bytes / (1024 * 1024):.2f}MB。",
+                        flush=True,
+                    )
                 return pdf_path
             except Exception as e:
                 try:

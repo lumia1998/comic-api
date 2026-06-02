@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Query, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from src.services.aggregator import AggregatorService
+from src.services.aggregator import AggregatorService, ComicApiError
 
 app = FastAPI(
     title="Aggregated Comic API",
@@ -107,6 +107,8 @@ async def api_download_chapter(
             filename=filename,
             media_type="application/pdf"
         )
+    except ComicApiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

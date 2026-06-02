@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import io
 import sys
@@ -13,6 +14,7 @@ clients.BikaClient = lambda: object()
 sys.modules.setdefault("src.clients", clients)
 
 from src.services.aggregator import AggregatorService
+from src.services.aggregator import ComicApiError
 
 
 def expected_jm_scramble_num(chapter_id: int, filename: str) -> int:
@@ -95,3 +97,63 @@ def test_encrypt_pdf_requires_password_when_pypdf_is_installed(tmp_path):
     assert reader.is_encrypted
     assert reader.decrypt("123456")
     assert len(reader.pages) == 1
+
+
+def test_create_compressed_pdf_uses_scale_fallback_until_under_limit(monkeypatch, tmp_path):
+    service = AggregatorService.__new__(AggregatorService)
+    image_path = tmp_path / "0001.png"
+    image_path.write_bytes(b"image")
+    pdf_path = tmp_path / "chapter.pdf"
+    attempts = []
+
+    def fake_make_pdf_bytes(_image_paths, quality, scale):
+        attempts.append((quality, scale))
+        if scale < 1.0 and quality == 85:
+            return b"ok"
+        return b"too-large"
+
+    monkeypatch.setattr(service, "_make_pdf_bytes", fake_make_pdf_bytes)
+
+    service._create_compressed_pdf([str(image_path)], str(pdf_path), limit_bytes=3)
+
+    assert pdf_path.read_bytes() == b"ok"
+    assert (20, 1.0) in attempts
+    assert (85, 0.85) in attempts
+
+
+def test_download_rejects_invalid_source_with_400():
+    service = AggregatorService.__new__(AggregatorService)
+    service.jm = object()
+    service.bika = object()
+
+    with pytest.raises(ComicApiError) as error:
+        asyncio.run(service.download_chapter_pdf("bad", "1", "1"))
+
+    assert error.value.status_code == 400
+
+
+def test_download_rejects_bika_without_login_with_401():
+    service = AggregatorService.__new__(AggregatorService)
+    service.jm = object()
+    service.bika = types.SimpleNamespace(authorization="")
+
+    with pytest.raises(ComicApiError) as error:
+        asyncio.run(service.download_chapter_pdf("bika", "comic", "1"))
+
+    assert error.value.status_code == 401
+
+
+def test_download_rejects_empty_chapter_images_with_404(monkeypatch):
+    service = AggregatorService.__new__(AggregatorService)
+    service.jm = object()
+    service.bika = object()
+
+    async def fake_images(_source, _comic_id, _chapter_id):
+        return []
+
+    monkeypatch.setattr(service, "get_chapter_images", fake_images)
+
+    with pytest.raises(ComicApiError) as error:
+        asyncio.run(service.download_chapter_pdf("jm", "123", "123"))
+
+    assert error.value.status_code == 404
