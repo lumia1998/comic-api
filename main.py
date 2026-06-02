@@ -1,6 +1,6 @@
+import hashlib
 import os
-import re
-from fastapi import FastAPI, Request, Query, BackgroundTasks
+from fastapi import FastAPI, Request, Query, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,6 +19,11 @@ app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
 templates = Jinja2Templates(directory="src/web/templates")
 
 aggregator = AggregatorService()
+
+def pdf_password_for(source: str, comic_id: str, chapter_id: str) -> str:
+    seed = f"{source.strip().lower()}:{comic_id}:{chapter_id}".encode("utf-8")
+    value = int(hashlib.sha256(seed).hexdigest()[:12], 16) % 1000000
+    return f"{value:06d}"
 
 @app.get("/health")
 async def health_check():
@@ -70,22 +75,22 @@ async def api_download_chapter(
     chapter_id: str,
     background_tasks: BackgroundTasks,
     title: str = Query(""),
-    chapter: str = Query("")
+    chapter: str = Query(""),
+    password: str = Query(""),
+    concurrency: int = Query(4, ge=1, le=16)
 ):
     """下载章节并打包成自适应压缩的 PDF"""
     try:
-        pdf_path = await aggregator.download_chapter_pdf(source, comic_id, chapter_id)
+        pdf_password = password or pdf_password_for(source, comic_id, chapter_id)
+        pdf_path = await aggregator.download_chapter_pdf(
+            source,
+            comic_id,
+            chapter_id,
+            concurrency=concurrency,
+            password=pdf_password,
+        )
         
-        # Build a safe and clean filename for the user
-        safe_title = title.replace(" ", "_").strip() if title else comic_id
-        safe_ch = chapter.replace(" ", "_").strip() if chapter else chapter_id
-        filename = f"{safe_title}_{safe_ch}.pdf"
-        
-        # Remove all spaces from the filename
-        filename = re.sub(r'[\\/:*?"<>|\s]', "_", filename)
-        filename = re.sub(r'_+', '_', filename).strip('_')
-        if not filename.endswith(".pdf"):
-            filename += ".pdf"
+        filename = f"{pdf_password}.pdf"
 
         # Register background task to clean up the temporary PDF file
         def remove_temp_file(path: str):
@@ -103,7 +108,7 @@ async def api_download_chapter(
             media_type="application/pdf"
         )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 # ==================== 新增高阶玩法的 API 路由 ====================
 

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import io
 import math
@@ -121,6 +122,53 @@ class AggregatorService:
             raise Exception(f"Failed to download image from {url}: status={res.status_code}")
         return res.content
 
+    def _jm_image_filename(self, url: str) -> str:
+        path = urllib.parse.urlparse(url).path
+        filename = path.rsplit("/", 1)[-1]
+        if "." in filename:
+            filename = filename.rsplit(".", 1)[0]
+        return filename or ""
+
+    def _jm_scramble_num(self, chapter_id: str, filename: str) -> int:
+        try:
+            ch_id = int(str(chapter_id).strip())
+        except Exception:
+            return 0
+        if ch_id < 220980:
+            return 0
+        if ch_id < 268850:
+            return 10
+
+        modulus = 10 if ch_id < 421926 else 8
+        digest = hashlib.md5(f"{ch_id}{filename}".encode("utf-8")).hexdigest()
+        value = ord(digest[-1]) % modulus
+        return value * 2 + 2
+
+    def _descramble_jm_image(self, data: bytes, chapter_id: str, image_url: str) -> bytes:
+        filename = self._jm_image_filename(image_url)
+        scramble_num = self._jm_scramble_num(chapter_id, filename)
+        if scramble_num <= 1:
+            return data
+
+        with Image.open(io.BytesIO(data)) as img:
+            width, height = img.size
+            slice_height = height // scramble_num
+            remainder = height % scramble_num
+            if slice_height <= 0:
+                return data
+
+            fixed = Image.new(img.mode, (width, height))
+            for index in range(scramble_num):
+                src_y = height - slice_height * (index + 1) - remainder
+                dst_y = slice_height * index + (0 if index == 0 else remainder)
+                current_height = slice_height + (remainder if index == 0 else 0)
+                box = (0, src_y, width, src_y + current_height)
+                fixed.paste(img.crop(box), (0, dst_y))
+
+            output = io.BytesIO()
+            fixed.save(output, format=img.format or "JPEG")
+            return output.getvalue()
+
     def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, source: str = "", chapter_id: str = "", concurrency: int = 4) -> List[str]:
         results = {}
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -136,43 +184,7 @@ class AggregatorService:
                     # Apply JmComic descrambling if source is jm
                     if source == "jm" and chapter_id:
                         try:
-                            ch_id = int(chapter_id)
-                            # Check scramble thresholds
-                            if ch_id >= 268850:
-                                scramble_num = 10
-                            elif ch_id >= 220980:
-                                scramble_num = 8
-                            else:
-                                scramble_num = 0
-                                
-                            if scramble_num > 0:
-                                from PIL import Image
-                                import io
-                                img = Image.open(io.BytesIO(data))
-                                width, height = img.size
-                                slice_height = height // scramble_num
-                                remainder = height % scramble_num
-                                
-                                new_img = Image.new(img.mode, (width, height))
-                                
-                                # Reassemble the first scramble_num - 1 slices
-                                for i in range(scramble_num - 1):
-                                    src_y = slice_height * (scramble_num - 2 - i)
-                                    dest_y = slice_height * i
-                                    box = (0, src_y, width, src_y + slice_height)
-                                    slice_img = img.crop(box)
-                                    new_img.paste(slice_img, (0, dest_y))
-                                    
-                                # Reassemble the last slice (remainder)
-                                src_y = slice_height * (scramble_num - 1)
-                                dest_y = src_y
-                                box = (0, src_y, width, height)
-                                slice_img = img.crop(box)
-                                new_img.paste(slice_img, (0, dest_y))
-                                
-                                output_bytes = io.BytesIO()
-                                new_img.save(output_bytes, format=img.format or "JPEG")
-                                data = output_bytes.getvalue()
+                            data = self._descramble_jm_image(data, chapter_id, urls[idx])
                         except Exception as e:
                             print(f"[comic-api] JmComic descramble error: {e}")
                     
@@ -224,7 +236,37 @@ class AggregatorService:
                 except Exception:
                     pass
 
-    async def download_chapter_pdf(self, source: str, comic_id: str, chapter_id: str) -> str:
+    def _encrypt_pdf(self, pdf_path: str, password: str) -> None:
+        if not password:
+            return
+        try:
+            from pypdf import PdfReader, PdfWriter
+        except ImportError as e:
+            raise Exception("pypdf is required to encrypt PDF output") from e
+
+        reader = PdfReader(pdf_path)
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+
+        try:
+            writer.encrypt(user_password=password, owner_password=password, algorithm="AES-256")
+        except TypeError:
+            writer.encrypt(password)
+
+        encrypted_path = f"{pdf_path}.encrypted"
+        try:
+            with open(encrypted_path, "wb") as f:
+                writer.write(f)
+            os.replace(encrypted_path, pdf_path)
+        finally:
+            if os.path.exists(encrypted_path):
+                try:
+                    os.remove(encrypted_path)
+                except Exception:
+                    pass
+
+    async def download_chapter_pdf(self, source: str, comic_id: str, chapter_id: str, concurrency: int = 4, password: str = "") -> str:
         """下载章节并打包成自适应压缩的 PDF，返回本地临时 PDF 路径"""
         client = None
         if source == "jm":
@@ -244,8 +286,9 @@ class AggregatorService:
         try:
             # Download images in parallel
             loop = asyncio.get_running_loop()
+            worker_count = max(1, min(int(concurrency), 16))
             all_paths = await loop.run_in_executor(
-                None, self._download_images_parallel, client, image_urls, temp_dir, source, chapter_id, 4
+                None, self._download_images_parallel, client, image_urls, temp_dir, source, chapter_id, worker_count
             )
 
             # Package and dynamically compress to PDF
@@ -260,6 +303,7 @@ class AggregatorService:
                 await loop.run_in_executor(
                     None, self._create_compressed_pdf, all_paths, pdf_path, limit_bytes
                 )
+                await loop.run_in_executor(None, self._encrypt_pdf, pdf_path, password)
                 return pdf_path
             except Exception as e:
                 try:
