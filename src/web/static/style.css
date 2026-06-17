@@ -28,6 +28,26 @@
   --radius: 0.5rem;            /* 8px */
 }
 
+:root.light {
+  --background: #ffffff;       /* Pure White */
+  --foreground: #09090b;       /* Zinc 950 */
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #18181b;          /* Dark Primary */
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;        /* Zinc 100 */
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a; /* Zinc 500 */
+  --accent: #e4e4e7;           /* Zinc 200 */
+  --accent-foreground: #09090b;
+  --border: #e4e4e7;           /* Zinc 200 Border */
+  --input: #e4e4e7;
+  --ring: #18181b;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -43,6 +63,7 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Base Layout and Container */
@@ -109,12 +130,13 @@ header p {
 /* Tabs Navigation - Elegant shadcn style */
 .tabs-container {
   display: inline-flex;
-  background-color: #18181b;
+  background-color: var(--secondary);
   border: 1px solid var(--border);
   padding: 4px;
   border-radius: var(--radius);
   margin-bottom: 40px;
   gap: 2px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .tab-trigger {
@@ -285,8 +307,9 @@ header p {
 
 .meta-tag.source-tag {
   color: var(--foreground);
-  border-color: #3f3f46;
+  border-color: var(--border);
   text-transform: uppercase;
+  transition: color 0.3s ease, border-color 0.3s ease;
 }
 
 .best-card-desc {
@@ -521,25 +544,24 @@ header p {
 
 .episodes-list {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   overflow-y: auto;
   padding-right: 4px;
-  align-content: start;
 }
 
 .episode-btn {
-  display: inline-block;
+  display: block;
   width: 100%;
   background-color: var(--secondary);
   border: 1px solid var(--border);
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: var(--radius);
   color: var(--foreground);
-  text-align: center;
+  text-align: left;
   cursor: pointer;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.2;
   transition: all 0.2s;

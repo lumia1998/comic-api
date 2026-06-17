@@ -5,11 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>聚合漫画引擎 - Aggregate Comic Portal</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    (function() {
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (savedTheme === 'light' || (!savedTheme && !prefersDark)) {
+        document.documentElement.classList.add('light');
+      } else {
+        document.documentElement.classList.remove('light');
+      }
+    })();
+  </script>
 </head>
 <body>
 
-  <!-- 哔咔状态展示 (Shadcn Status Badge) -->
-  <div class="bika-status-container">
+  <!-- 哔咔状态展示 (Shadcn Status Badge) & Theme Toggle -->
+  <div class="bika-status-container" style="display: flex; gap: 8px; align-items: center;">
+    <button class="status-badge" id="theme-toggle-btn" onclick="toggleTheme()" title="切换亮色/暗色模式" style="padding: 8px 12px; font-family: inherit; outline: none;">
+      <span id="theme-icon">🌙</span>
+    </button>
     <div class="status-badge" onclick="showLoginModal()" title="点击绑定或管理哔咔账户">
       <span class="dot {{ 'green' if bika_authed else 'yellow' }}" id="bika-dot"></span>
       <span id="bika-status-text">{{ '哔咔已登录' if bika_authed else '哔咔未登录 (点击绑定)' }}</span>
@@ -309,8 +323,24 @@
     let currentComicId = "";
     let currentSource = "";
 
+    // 页面主题模式
+    function initThemeIcon() {
+      const isLight = document.documentElement.classList.contains('light');
+      const themeIcon = document.getElementById('theme-icon');
+      if (themeIcon) {
+        themeIcon.innerText = isLight ? '☀️' : '🌙';
+      }
+    }
+
+    function toggleTheme() {
+      const isLight = document.documentElement.classList.toggle('light');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
+      initThemeIcon();
+    }
+
     // 页面初始化
     document.addEventListener("DOMContentLoaded", () => {
+      initThemeIcon();
       updateLeaderboardModes();
       updateCategoryOptions();
       updateBikaSortVisibility('category');
