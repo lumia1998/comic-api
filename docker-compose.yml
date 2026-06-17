@@ -1,6 +1,6 @@
 services:
   comic-api:
-    build: .
+    image: ghcr.io/lumia1998/comic-api:latest
     container_name: comic-api
     ports:
       - "34587:8699"
