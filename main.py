@@ -34,7 +34,7 @@ async def health_check():
 async def home_index(request: Request):
     """前端首页"""
     bika_authed = bool(aggregator.bika.authorization)
-    return templates.TemplateResponse("index.html", {"request": request, "bika_authed": bika_authed})
+    return templates.TemplateResponse(request, "index.html", {"bika_authed": bika_authed})
 
 @app.get("/api/search")
 async def api_search(keyword: str = Query(..., min_length=1)):
