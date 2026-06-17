@@ -1,0 +1,12 @@
+services:
+  comic-api:
+    build: .
+    container_name: comic-api
+    ports:
+      - "34587:8699"
+    environment:
+      - TZ=Asia/Shanghai
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

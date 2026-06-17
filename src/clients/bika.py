@@ -16,7 +16,11 @@ class BikaClient(BaseClient):
         super().__init__()
         self.api_base = Config.BIKA_DEFAULT_API_BASE
         self.authorization = ""
-        self.token_file = str(Path(__file__).resolve().parents[2] / ".bika_token")
+        data_dir = os.environ.get("DATA_DIR", "")
+        if data_dir and os.path.isdir(data_dir):
+            self.token_file = os.path.join(data_dir, ".bika_token")
+        else:
+            self.token_file = str(Path(__file__).resolve().parents[2] / ".bika_token")
         
         # 自动加载 Token
         try:

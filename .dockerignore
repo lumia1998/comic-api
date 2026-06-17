@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+.venv/
+.env
+.git/
+.agents/
+*.log
+*.token
+skills-lock.json
+tests/
+test_*.py

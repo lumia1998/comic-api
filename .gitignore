@@ -23,3 +23,6 @@ skills-lock.json
 *.log
 *.sqlite
 .system_generated/
+
+# Docker data
+data/
