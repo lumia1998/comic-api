@@ -530,15 +530,18 @@ header p {
 }
 
 .episode-btn {
+  display: inline-block;
+  width: 100%;
   background-color: var(--secondary);
   border: 1px solid var(--border);
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: var(--radius);
   color: var(--foreground);
   text-align: center;
   cursor: pointer;
   font-size: 0.8125rem;
   font-weight: 500;
+  line-height: 1.2;
   transition: all 0.2s;
   white-space: nowrap;
   overflow: hidden;
