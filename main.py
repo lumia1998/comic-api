@@ -1,7 +1,9 @@
 import hashlib
 import os
+import asyncio
+import urllib.parse
 from fastapi import FastAPI, Request, Query, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from src.services.aggregator import AggregatorService, ComicApiError
@@ -48,11 +50,52 @@ async def api_comic_detail(source: str, comic_id: str):
     detail = await aggregator.get_comic_detail(source, comic_id)
     return detail
 
+@app.get("/api/image/proxy")
+async def api_image_proxy(url: str, source: str, chapter_id: str = ""):
+    """图片代理与去混淆"""
+    try:
+        loop = asyncio.get_running_loop()
+        client = None
+        if source == "jm":
+            client = aggregator.jm
+        elif source == "bika":
+            client = aggregator.bika
+        else:
+            raise HTTPException(status_code=400, detail="Invalid source")
+
+        # 下载原始图片数据
+        data = await loop.run_in_executor(None, aggregator._download_image, client, url)
+
+        # 禁漫天堂图片去混淆还原
+        if source == "jm" and chapter_id:
+            try:
+                data = await loop.run_in_executor(None, aggregator._descramble_jm_image, data, chapter_id, url)
+            except Exception as e:
+                print(f"[Proxy] JMComic descramble error: {e}")
+
+        # 判断 Content-Type
+        content_type = "image/jpeg"
+        url_lower = url.lower()
+        if ".png" in url_lower:
+            content_type = "image/png"
+        elif ".webp" in url_lower:
+            content_type = "image/webp"
+        elif ".gif" in url_lower:
+            content_type = "image/gif"
+
+        return Response(content=data, media_type=content_type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/chapter/{source}/{comic_id}/{chapter_id}")
 async def api_chapter_images(source: str, comic_id: str, chapter_id: str):
     """章节图片"""
     images = await aggregator.get_chapter_images(source, comic_id, chapter_id)
-    return {"images": images}
+    proxied_images = [
+        f"/api/image/proxy?url={urllib.parse.quote(url)}&source={source}&chapter_id={chapter_id}"
+        for url in images
+    ]
+    return {"images": proxied_images}
 
 @app.post("/api/bika/login")
 async def api_bika_login(data: dict):

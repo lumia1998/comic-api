@@ -210,9 +210,10 @@ class BikaClient(BaseClient):
                 ch_id = str(doc.get("order", ""))
                 if not ch_id:
                     continue
+                ch_name = doc.get("title") or doc.get("name") or f"第{doc.get('order', idx+1)}话"
                 chapters.append({
                     "id": ch_id,
-                    "name": doc.get("title", f"第{idx+1}话"),
+                    "name": ch_name,
                     "order": int(ch_id)
                 })
                 

@@ -260,7 +260,7 @@ class JmClient(BaseClient):
                     ch_id = str(ep.get("id", ""))
                     if not ch_id:
                         continue
-                    ch_title = ep.get("name", f"第{idx+1}话")
+                    ch_title = ep.get("name") or ep.get("title") or f"第{ep.get('sort', idx+1)}话"
                     chapters.append({
                         "id": ch_id,
                         "name": ch_title,

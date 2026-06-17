@@ -1,6 +1,16 @@
 import random
 import uuid
-from curl_cffi import requests
+try:
+    from curl_cffi import requests
+except ImportError:
+    import requests
+    # Monkeypatch requests.Session to pop 'impersonate'
+    _orig_request = requests.Session.request
+    def _patched_request(self, method, url, **kwargs):
+        kwargs.pop("impersonate", None)
+        return _orig_request(self, method, url, **kwargs)
+    requests.Session.request = _patched_request
+
 
 def generate_android_user_agent(device_id: str = None) -> str:
     """对应 state.ts 生成符合 Android 规律的 User-Agent"""
