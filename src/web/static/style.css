@@ -59,7 +59,7 @@ body {
   font-family: "Geist", "Inter", sans-serif;
   background-color: var(--background);
   color: var(--foreground);
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -70,7 +70,8 @@ body {
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 24px;
+  padding: 0 24px 40px 24px;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 header {
@@ -81,8 +82,11 @@ header {
 h1 {
   font-size: 2.25rem;
   font-weight: 800;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
   margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--foreground) 30%, var(--muted-foreground) 90%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 header p {
@@ -93,9 +97,9 @@ header p {
 
 /* Bika Status Badge (top right) */
 .bika-status-container {
-  position: absolute;
-  top: 40px;
-  right: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   z-index: 50;
 }
 
@@ -134,7 +138,6 @@ header p {
   border: 1px solid var(--border);
   padding: 4px;
   border-radius: var(--radius);
-  margin-bottom: 40px;
   gap: 2px;
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
@@ -149,6 +152,9 @@ header p {
   border-radius: calc(var(--radius) - 2px);
   cursor: pointer;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tab-trigger:hover {
@@ -175,12 +181,15 @@ header p {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Inputs & Form Groups in Search tab */
 .search-form-row {
   display: flex;
   gap: 12px;
   max-width: 600px;
+  width: 100%;
   margin-bottom: 40px;
+  margin-left: auto;
+  margin-right: auto;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .input-minimal {
@@ -192,11 +201,14 @@ header p {
   padding: 10px 16px;
   font-size: 0.875rem;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1), padding 0.5s cubic-bezier(0.4, 0, 0.2, 1), font-size 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.input-minimal:focus {
+.input-minimal:focus,
+.select-minimal:focus,
+.form-group input:focus {
   border-color: var(--ring);
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
 }
 
 .btn-primary {
@@ -208,7 +220,7 @@ header p {
   border-radius: var(--radius);
   padding: 10px 24px;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1), padding 0.5s cubic-bezier(0.4, 0, 0.2, 1), font-size 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-primary:hover {
@@ -238,6 +250,15 @@ header p {
   gap: 16px;
   align-items: flex-end;
   margin-bottom: 30px;
+}
+
+.filter-row label {
+  text-align: center;
+  display: block;
+}
+
+.filter-row .btn-primary {
+  margin-left: auto;
 }
 
 .select-minimal {
@@ -310,6 +331,18 @@ header p {
   border-color: var(--border);
   text-transform: uppercase;
   transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+.meta-tag.source-tag.jm {
+  background: linear-gradient(135deg, #f97316, #ea580c) !important;
+  color: #ffffff !important;
+  border-color: #f97316 !important;
+}
+
+.meta-tag.source-tag.bika {
+  background: linear-gradient(135deg, #ec4899, #db2777) !important;
+  color: #ffffff !important;
+  border-color: #ec4899 !important;
 }
 
 .best-card-desc {
@@ -414,6 +447,14 @@ header p {
 }
 
 /* Custom Scrollbars in Minimal */
+.comic-list,
+.episodes-list,
+.reading-container,
+.detail-sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
 .comic-list::-webkit-scrollbar,
 .episodes-list::-webkit-scrollbar,
 .reading-container::-webkit-scrollbar,
@@ -442,7 +483,7 @@ header p {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -544,35 +585,67 @@ header p {
 
 .episodes-list {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
   overflow-y: auto;
   padding-right: 4px;
+  align-content: start;
+}
+
+.episode-row {
+  display: flex;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  height: 40px;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.1s ease;
+}
+
+.episode-row:hover {
+  border-color: var(--ring);
+  background-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 .episode-btn {
-  display: block;
-  width: 100%;
-  background-color: var(--secondary);
-  border: 1px solid var(--border);
-  padding: 12px 16px;
-  border-radius: var(--radius);
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 10px 0 12px;
+  height: 100%;
   color: var(--foreground);
   text-align: left;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
-  line-height: 1.2;
-  transition: all 0.2s;
+  line-height: 40px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: block;
 }
 
-.episode-btn:hover {
-  background-color: var(--accent);
-  border-color: var(--ring);
+.episode-download-btn {
+  background: transparent !important;
+  border: none !important;
+  border-left: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  padding: 0 10px;
+  height: 100%;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, background-color 0.2s;
+  flex-shrink: 0;
+}
+
+.episode-download-btn:hover {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  color: #ef4444 !important;
 }
 
 /* Immersive Reader Viewer */
@@ -581,7 +654,7 @@ header p {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background-color: #030303;
   z-index: 1002;
   display: none;
@@ -589,30 +662,187 @@ header p {
 }
 
 .reader-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
   height: 60px;
   background-color: rgba(9, 9, 11, 0.95);
-  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
+  z-index: 1020;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  align-items: center;
+  padding: 0 40px;
+  box-sizing: border-box;
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+:root.light .reader-header {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+/* Hover trigger zone at the top of viewport */
+.reader-top-trigger {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 40px;
+  z-index: 1019;
+  background: transparent;
+  pointer-events: auto;
+}
+
+/* Slide down header on hover of trigger or header itself */
+.reader-top-trigger:hover + .reader-header,
+.reader-header:hover,
+.reader-overlay.show-controls .reader-header {
+  transform: translateY(0);
+  opacity: 1;
 }
 
 .reading-container {
   flex: 1;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Scroll Mode vs Page Mode container styling */
+.reader-overlay.mode-scroll .reading-container {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0;
 }
 
-.reading-container img {
+.reader-overlay.mode-scroll .reading-container img {
   max-width: 720px;
   width: 100%;
   margin-bottom: 0;
   border: none;
+}
+
+.reader-overlay.mode-page .reading-container {
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100dvh;
+  width: 100vw;
+  cursor: pointer;
+}
+
+.reader-overlay.mode-page .reading-container img {
+  max-height: calc(100dvh - 60px);
+  max-width: 95%;
+  height: auto;
+  width: auto;
+  object-fit: contain;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: transform 0.2s ease;
+}
+
+:root.light .reader-overlay.mode-page .reading-container img {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* Bottom Control Bar on Hover */
+.reader-bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 60px;
+  background-color: rgba(9, 9, 11, 0.95);
+  border-top: 1px solid var(--border);
+  z-index: 1020;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 40px;
+  box-sizing: border-box;
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+:root.light .reader-bottom-bar {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+/* Hover trigger zone at the bottom of viewport */
+.reader-bottom-trigger {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 60px;
+  z-index: 1019;
+  background: transparent;
+  pointer-events: auto;
+}
+
+/* When hovering trigger zone or the bottom bar itself, slide up the bar */
+.reader-bottom-trigger:hover + .reader-bottom-bar,
+.reader-bottom-bar:hover,
+.reader-overlay.show-controls .reader-bottom-bar {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.reader-bottom-indicator {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  min-width: 60px;
+  user-select: none;
+}
+
+.reader-control-btn {
+  background-color: var(--background);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.reader-control-btn:hover {
+  background-color: var(--accent);
+  border-color: var(--ring);
+}
+
+/* 阅读器图片加载失败占位：阅读器背景恒为深黑，故用固定深色中性调，不随页面主题变化 */
+.reader-error-page {
+  width: 100%;
+  max-width: 720px;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background-color: #18181b;
+  border: 1px solid #27272a;
+  border-radius: var(--radius);
+  color: #a1a1aa;
+  font-size: 0.9rem;
 }
 
 /* Loading indicators */
@@ -636,6 +866,41 @@ header p {
   to { transform: rotate(360deg); }
 }
 
+/* 骨架屏：匹配漫画栅格卡片的形状，替代纯转圈 */
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.skeleton-card {
+  height: 270px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    100deg,
+    var(--secondary) 30%,
+    var(--accent) 50%,
+    var(--secondary) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card {
+    animation: none;
+  }
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
 @media (max-width: 768px) {
   .best-card {
     flex-direction: column;
@@ -655,7 +920,29 @@ header p {
   }
   .bika-status-container {
     position: static;
-    margin-bottom: 24px;
+    margin-bottom: 0;
+  }
+}
+
+/* 窄屏导航：允许折行，tab 行横向滚动避免挤压折断 */
+@media (max-width: 920px) {
+  .navbar {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 20px;
+  }
+  .tabs-container {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .tabs-container::-webkit-scrollbar {
+    display: none;
+  }
+  .tab-trigger {
+    flex-shrink: 0;
   }
 }
 
@@ -752,5 +1039,393 @@ header p {
 .login-close:hover {
   color: var(--foreground);
   background-color: var(--secondary);
+}
+
+/* Premium Comic Card Layout (Grid Item) */
+.comic-card {
+  position: relative;
+  height: 270px;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+              background-color 0.3s ease, 
+              border-color 0.3s ease, 
+              box-shadow 0.25s ease;
+}
+
+.comic-card:hover {
+  background-color: var(--accent);
+  border-color: var(--ring);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.4);
+}
+
+:root.light .comic-card:hover {
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.08);
+}
+
+.comic-card-cover-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.comic-card-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.comic-card:hover .comic-card-cover {
+  transform: scale(1.04);
+}
+
+.comic-card-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 40px 12px 12px 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.65) 60%, rgba(0, 0, 0, 0) 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  z-index: 5;
+}
+
+.comic-card-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #ffffff !important;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.comic-card-author {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.75) !important;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Hover effect on horizontal items */
+.comic-item {
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.comic-item:hover {
+  transform: translateX(4px);
+}
+
+/* Toast Notification System */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  animation: slideInRight 0.2s ease-out;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 350px;
+  line-height: 1.4;
+}
+
+:root.light .toast {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.toast.fade-out {
+  animation: fadeOut 0.2s ease-out forwards;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.95); }
+}
+
+
+
+/* Premium Search Engine Centered Mode Layout */
+.container.centered-mode {
+  min-height: calc(80dvh - 100px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.container.centered-mode .portal-logo {
+  margin-top: -10vh; /* optical centering adjustment */
+}
+
+.container.centered-mode .search-form-row {
+  max-width: 650px;
+  width: 100%;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Capsule Form Elements in Centered Mode */
+.container.centered-mode .input-minimal {
+  border-radius: 9999px;
+  padding: 14px 24px;
+  font-size: 1rem;
+}
+
+.container.centered-mode .btn-primary {
+  border-radius: 9999px;
+  padding: 14px 32px;
+  font-size: 1rem;
+}
+
+/* Navigation Bar */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 40px;
+  position: relative;
+  z-index: 100;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.nav-logo {
+  font-size: 1.625rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  color: var(--foreground);
+  user-select: none;
+  transition: opacity 0.3s ease;
+}
+
+/* Portal Home-Search and Results UI Elements */
+body.home-search-mode .nav-logo {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body:not(.home-search-mode) .nav-logo {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.portal-logo {
+  font-size: 5rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  color: var(--foreground);
+  margin-bottom: 32px;
+  user-select: none;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+  line-height: 1.1;
+  display: block;
+}
+
+body:not(.home-search-mode) .portal-logo {
+  opacity: 0;
+  height: 0;
+  margin-bottom: 0;
+  transform: scale(0.8) translateY(-20px);
+  pointer-events: none;
+  overflow: hidden;
+  display: none;
+}
+
+/* 2-Column Horizontal Cards Grid for Unified Search Results */
+.search-results-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 20px;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .search-results-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+.search-result-card {
+  display: flex;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  padding: 14px;
+  gap: 16px;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
+              background-color 0.3s ease, 
+              border-color 0.3s ease, 
+              box-shadow 0.2s ease;
+}
+
+.search-result-card:hover {
+  background-color: var(--accent);
+  border-color: var(--ring);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.3);
+}
+
+:root.light .search-result-card:hover {
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.06);
+}
+
+.search-result-card-cover {
+  width: 90px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.search-result-card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding-right: 76px; /* Space for absolute badge */
+}
+
+.search-result-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  color: var(--foreground);
+}
+
+.search-result-card-desc {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-result-card-meta {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.search-result-card-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  user-select: none;
+}
+
+/* 来源色与栅格卡片角标保持一致：禁漫=橙、哔咔=粉，全站统一 */
+.search-result-card-badge.jm {
+  background-color: rgba(249, 115, 22, 0.12); /* Orange 500 */
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.28);
+}
+
+.search-result-card-badge.bika {
+  background-color: rgba(236, 72, 153, 0.12); /* Pink 500 */
+  color: #ec4899;
+  border: 1px solid rgba(236, 72, 153, 0.28);
+}
+
+/* Pagination container */
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 40px;
+  width: 100%;
+}
+
+.pagination-btn {
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background-color: var(--accent);
+  border-color: var(--ring);
+}
+
+.pagination-btn.active {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 键盘聚焦时的可见焦点环（卡片是 role=button，需要可见焦点） */
+.comic-card:focus-visible,
+.search-result-card:focus-visible,
+.tab-trigger:focus-visible,
+.pagination-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 

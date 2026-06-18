@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>聚合漫画引擎 - Aggregate Comic Portal</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
   <script>
     (function() {
       const savedTheme = localStorage.getItem('theme');
@@ -17,71 +18,75 @@
     })();
   </script>
 </head>
-<body>
+<body class="home-search-mode">
 
-  <!-- 哔咔状态展示 (Shadcn Status Badge) & Theme Toggle -->
-  <div class="bika-status-container" style="display: flex; gap: 8px; align-items: center;">
-    <button class="status-badge" id="theme-toggle-btn" onclick="toggleTheme()" title="切换亮色/暗色模式" style="padding: 8px 12px; font-family: inherit; outline: none;">
-      <span id="theme-icon">🌙</span>
-    </button>
-    <div class="status-badge" onclick="showLoginModal()" title="点击绑定或管理哔咔账户">
-      <span class="dot {{ 'green' if bika_authed else 'yellow' }}" id="bika-dot"></span>
-      <span id="bika-status-text">{{ '哔咔已登录' if bika_authed else '哔咔未登录 (点击绑定)' }}</span>
-    </div>
-  </div>
-
-  <div class="container">
-    <header>
-      <h1>AGGREGATE COMIC PORTAL</h1>
-      <p>多渠道漫画搜索聚合与高级浏览引擎 (禁漫天堂 · 哔咔漫画)</p>
-    </header>
+  <!-- Top Navigation Header -->
+  <nav class="navbar">
+    <div class="nav-logo">comic</div>
 
     <!-- Tabs pill navigation -->
     <div class="tabs-container">
-      <button class="tab-trigger active" id="trigger-search" onclick="switchTab('search')">🔍 聚合检索</button>
-      <button class="tab-trigger" id="trigger-leaderboard" onclick="switchTab('leaderboard')">🏆 漫画排行</button>
-      <button class="tab-trigger" id="trigger-category" onclick="switchTab('category')">📂 分类浏览</button>
-      <button class="tab-trigger" id="trigger-latest" onclick="switchTab('latest')">⚡ 最近更新</button>
-      <button class="tab-trigger" id="trigger-random" onclick="switchTab('random')">🎲 随机推荐</button>
+      <button class="tab-trigger active" id="trigger-search" onclick="switchTab('search')">
+        <iconify-icon icon="lucide:search" style="font-size: 1rem; display: flex;"></iconify-icon>聚合检索
+      </button>
+      <button class="tab-trigger" id="trigger-leaderboard" onclick="switchTab('leaderboard')">
+        <iconify-icon icon="lucide:trophy" style="font-size: 1rem; display: flex;"></iconify-icon>漫画排行
+      </button>
+      <button class="tab-trigger" id="trigger-category" onclick="switchTab('category')">
+        <iconify-icon icon="lucide:folder" style="font-size: 1rem; display: flex;"></iconify-icon>分类浏览
+      </button>
+      <button class="tab-trigger" id="trigger-latest" onclick="switchTab('latest')">
+        <iconify-icon icon="lucide:zap" style="font-size: 1rem; display: flex;"></iconify-icon>最近更新
+      </button>
+      <button class="tab-trigger" id="trigger-random" onclick="switchTab('random')">
+        <iconify-icon icon="lucide:dice-5" style="font-size: 1rem; display: flex;"></iconify-icon>随机推荐
+      </button>
+    </div>
+
+    <!-- Right status badge & Theme Toggle -->
+    <div class="bika-status-container">
+      <button class="status-badge" id="theme-toggle-btn" onclick="toggleTheme()" title="切换亮色/暗色模式" style="padding: 8px 12px; font-family: inherit; outline: none;">
+        <iconify-icon id="theme-icon" icon="lucide:moon" style="font-size: 1.1rem; display: flex;"></iconify-icon>
+      </button>
+      <div class="status-badge" onclick="showLoginModal()" title="点击绑定或管理哔咔账户">
+        <span class="dot {{ 'green' if bika_authed else 'yellow' }}" id="bika-dot"></span>
+        <span id="bika-status-text">{{ '哔咔已登录' if bika_authed else '哔咔未登录 (点击绑定)' }}</span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container centered-mode" id="main-container">
+    <div class="portal-logo" id="portal-logo">comic</div>
+    <!-- Search Form Row -->
+    <div class="search-form-row" id="search-row">
+      <input type="text" class="input-minimal" id="search-input" placeholder="输入漫画名称或 ID，一键聚合搜索" onkeydown="if(event.key === 'Enter') performSearch()">
+      <button class="btn-primary" onclick="performSearch()">聚合检索</button>
     </div>
 
     <!-- 1. Search Tab Content -->
     <div class="tab-content active" id="tab-search">
-      <div class="search-form-row">
-        <input type="text" class="input-minimal" id="search-input" placeholder="输入漫画名称，一键全网搜索并比对..." onkeydown="if(event.key === 'Enter') performSearch()">
-        <button class="btn-primary" onclick="performSearch()">聚合检索</button>
-      </div>
 
       <!-- 加载提示 -->
       <div class="loading" id="search-loader">
         <div class="spinner"></div>
-        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在跨越 Cloudflare 极速检索渠道中...</p>
+        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在搜索...</p>
       </div>
 
-      <!-- 最佳匹配 -->
-      <section class="best-match-section" id="best-match-section">
+      <!-- 最佳匹配 (隐藏) -->
+      <section class="best-match-section" id="best-match-section" style="display: none;">
         <div class="best-card" id="best-card">
           <!-- 动态生成 -->
         </div>
       </section>
 
-      <!-- 双栏比对结果 -->
-      <div class="grids-container" id="grids-container" style="display: none;">
-        <!-- 禁漫分栏 -->
-        <div class="grid-column">
-          <h2>禁漫天堂 <span class="count" id="count-jm">0</span></h2>
-          <div class="comic-list" id="list-jm">
-            <!-- 动态卡片 -->
-          </div>
+      <!-- 统一检索结果 -->
+      <div class="search-results-section" id="search-results-section" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+          <h2 style="font-size: 1.125rem; font-weight: 600;">搜索结果</h2>
+          <span style="font-size: 0.875rem; color: var(--muted-foreground);" id="search-results-count">为您找到 0 条符合条件的漫画</span>
         </div>
-
-        <!-- 哔咔分栏 -->
-        <div class="grid-column">
-          <h2>哔咔漫画 <span class="count" id="count-bika">0</span></h2>
-          <div class="comic-list" id="list-bika">
-            <!-- 动态卡片 -->
-          </div>
-        </div>
+        <div class="search-results-list" id="search-results-list"></div>
+        <div class="pagination-container" id="search-pagination"></div>
       </div>
     </div>
 
@@ -116,7 +121,7 @@
 
       <div class="loading" id="leaderboard-loader">
         <div class="spinner"></div>
-        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在拉取实时排行榜单...</p>
+        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在加载排行榜...</p>
       </div>
 
       <div id="leaderboard-container">
@@ -161,7 +166,7 @@
 
       <div class="loading" id="category-loader">
         <div class="spinner"></div>
-        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在按分类拉取漫画列表...</p>
+        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在按分类加载...</p>
       </div>
 
       <div id="category-container">
@@ -203,7 +208,7 @@
 
       <div class="loading" id="latest-loader">
         <div class="spinner"></div>
-        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在拉取漫画列表...</p>
+        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在加载漫画列表...</p>
       </div>
 
       <div id="latest-container">
@@ -221,12 +226,14 @@
             <option value="bika">哔咔漫画</option>
           </select>
         </div>
-        <button class="btn-primary" onclick="loadRandom()">🎲 随机推荐本子</button>
+        <button class="btn-primary" onclick="loadRandom()" style="display: inline-flex; align-items: center; gap: 8px;">
+          <iconify-icon icon="lucide:dice-5" style="font-size: 1rem; display: flex;"></iconify-icon>随机推荐本子
+        </button>
       </div>
 
       <div class="loading" id="random-loader">
         <div class="spinner"></div>
-        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在为您随机抽取精彩好书...</p>
+        <p style="color: var(--muted-foreground); font-size: 0.875rem;">正在随机推荐...</p>
       </div>
 
       <div id="random-container">
@@ -240,11 +247,13 @@
     <div class="drawer" onclick="event.stopPropagation()">
       <div class="drawer-header">
         <div class="drawer-header-title" id="drawer-title">漫画详情</div>
-        <button class="btn-close" onclick="toggleDrawer(false)">✕</button>
+        <button class="btn-close" onclick="toggleDrawer(false)" aria-label="关闭">
+          <iconify-icon icon="lucide:x" style="font-size: 1.1rem; display: flex;"></iconify-icon>
+        </button>
       </div>
       <div class="drawer-body">
         <div class="detail-sidebar">
-          <img id="drawer-cover" src="" alt="封面" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=300'">
+          <img id="drawer-cover" src="" alt="封面" onerror="this.onerror=null; this.src=FALLBACK_COVER">
           <div id="drawer-meta">
             <!-- 动态生成 -->
           </div>
@@ -260,23 +269,58 @@
   </div>
 
   <!-- 无缝滚动阅读器 -->
-  <div class="reader-overlay" id="reader-overlay">
+  <div class="reader-overlay mode-scroll" id="reader-overlay">
+    <!-- 顶部触发区 -->
+    <div class="reader-top-trigger"></div>
     <div class="reader-header">
-      <div class="drawer-header-title" id="reader-title">正在阅读</div>
-      <button class="btn-close" onclick="closeReader()">✕</button>
+      <div class="drawer-header-title" id="reader-title" style="white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 80%;">正在阅读</div>
+      <button class="btn-close" onclick="closeReader()" aria-label="关闭" style="flex-shrink: 0;">
+        <iconify-icon icon="lucide:x" style="font-size: 1.1rem; display: flex;"></iconify-icon>
+      </button>
     </div>
-    <div class="reading-container" id="reading-container">
-      <!-- 漫画大图 -->
+
+    <div class="reading-container" id="reading-container" onclick="handleReaderClick(event)">
+      <!-- 漫画图 -->
+    </div>
+
+    <!-- 底部触发区 -->
+    <div class="reader-bottom-trigger"></div>
+    <!-- 底部悬浮控制栏 -->
+    <div class="reader-bottom-bar" id="reader-bottom-bar" onclick="event.stopPropagation()">
+      <!-- 页面指示器 -->
+      <div class="reader-bottom-indicator" id="reader-page-indicator">0 / 0</div>
+
+      <!-- 模式切换开关 -->
+      <div class="tabs-container" style="padding: 2px; scale: 0.9; margin: 0 16px; flex-shrink: 0;">
+        <button class="tab-trigger active" id="btn-reader-scroll" onclick="setReaderMode('scroll')">
+          <iconify-icon icon="lucide:arrow-up-down" style="font-size: 0.85rem; display: flex;"></iconify-icon>条漫模式
+        </button>
+        <button class="tab-trigger" id="btn-reader-page" onclick="setReaderMode('page')">
+          <iconify-icon icon="lucide:book-open" style="font-size: 0.85rem; display: flex;"></iconify-icon>单页模式
+        </button>
+      </div>
+
+      <!-- 上下翻页按钮 -->
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button class="reader-control-btn" onclick="navigateReader(-1, event)" title="上一页 (PageUp)">
+          <iconify-icon icon="lucide:chevron-up" style="font-size: 1rem; display: flex;"></iconify-icon>
+        </button>
+        <button class="reader-control-btn" onclick="navigateReader(1, event)" title="下一页 (PageDown)">
+          <iconify-icon icon="lucide:chevron-down" style="font-size: 1rem; display: flex;"></iconify-icon>
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- 哔咔登录模态弹窗 (Sleek Zinc Dialog) -->
   <div class="login-overlay" id="login-overlay" onclick="closeLoginModal(event)">
     <div class="login-card" onclick="event.stopPropagation()">
-      <button class="login-close" onclick="hideLoginModal()">✕</button>
+      <button class="login-close" onclick="hideLoginModal()" aria-label="关闭">
+        <iconify-icon icon="lucide:x" style="font-size: 1.1rem; display: flex;"></iconify-icon>
+      </button>
       <h3>绑定 哔咔漫画 账户</h3>
       <p style="font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 20px; line-height: 1.4;">
-        由于哔咔强制进行人机验证与安全认证，部分接口可能需要您输入有效的哔咔账号密码以获取授权 Token。
+        哔咔部分接口需要账号授权。请输入哔咔账号密码以获取访问 Token，仅用于向哔咔请求数据。
       </p>
       
       <div class="form-group">
@@ -295,7 +339,18 @@
 
   <script>
     // 常量定义
-    const FALLBACK_COVER = "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=300";
+    // 本地内联 SVG 占位图，避免依赖外部图床（外链失效是常见问题）
+    const FALLBACK_COVER = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'>
+        <rect width='300' height='400' fill='#18181b'/>
+        <g fill='none' stroke='#3f3f46' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'>
+          <rect x='105' y='150' width='90' height='110' rx='6'/>
+          <path d='M105 220l24-24 20 20 30-34 16 18'/>
+        </g>
+        <circle cx='132' cy='178' r='9' fill='#3f3f46'/>
+        <text x='150' y='300' text-anchor='middle' fill='#52525b' font-family='sans-serif' font-size='15'>封面缺失</text>
+      </svg>`
+    );
 
     const JM_CATEGORIES = [
       { value: "latest", label: "最新发布 (Latest)" },
@@ -322,13 +377,42 @@
 
     let currentComicId = "";
     let currentSource = "";
+    let searchResults = [];
+    let searchCurrentPage = 1;
+    const searchPageSize = 12;
+    let readerMode = "scroll";
+    let readerImages = [];
+    let readerCurrentIndex = 0;
+
+    // Sleek Custom Toast Notifications
+    function showToast(message, duration = 4000) {
+      let container = document.getElementById('toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+      }
+      
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<iconify-icon icon="lucide:bell" style="font-size: 1.1rem; flex-shrink: 0;"></iconify-icon><span>${message}</span>`;
+      container.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.classList.add('fade-out');
+        toast.addEventListener('animationend', () => {
+          toast.remove();
+        });
+      }, duration);
+    }
 
     // 页面主题模式
     function initThemeIcon() {
       const isLight = document.documentElement.classList.contains('light');
       const themeIcon = document.getElementById('theme-icon');
       if (themeIcon) {
-        themeIcon.innerText = isLight ? '☀️' : '🌙';
+        themeIcon.setAttribute('icon', isLight ? 'lucide:sun' : 'lucide:moon');
       }
     }
 
@@ -349,6 +433,29 @@
 
     // 1. Tab 开关逻辑
     function switchTab(tabId) {
+      const searchRow = document.getElementById("search-row");
+      if (searchRow) {
+        searchRow.style.display = (tabId === "search") ? "flex" : "none";
+      }
+
+      const container = document.getElementById("main-container");
+      if (container) {
+        if (tabId === "search") {
+          const resultsSection = document.getElementById("search-results-section");
+          const hasResults = (resultsSection && resultsSection.style.display === "block");
+          if (!hasResults) {
+            container.classList.add("centered-mode");
+            document.body.classList.add("home-search-mode");
+          } else {
+            container.classList.remove("centered-mode");
+            document.body.classList.remove("home-search-mode");
+          }
+        } else {
+          container.classList.remove("centered-mode");
+          document.body.classList.remove("home-search-mode");
+        }
+      }
+
       // 1. 清理 active 状态
       document.querySelectorAll(".tab-trigger").forEach(btn => btn.classList.remove("active"));
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
@@ -472,14 +579,14 @@
         const sourceClass = item.source;
 
         html += `
-          <div class="comic-item" style="flex-direction: column; gap: 0; padding: 0; overflow: hidden;" onclick="openComic('${item.source}', '${item.id}')">
-            <div style="position: relative; width: 100%; height: 260px; overflow: hidden;">
-              <img src="${cover}" alt="${item.title}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='${FALLBACK_COVER}'">
-              <span class="meta-tag source-tag ${sourceClass}" style="position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 0.65rem; background: rgba(9,9,11,0.95);">${sourceLabel}</span>
+          <div class="comic-card" role="button" tabindex="0" aria-label="${item.title}" onclick="openComic('${item.source}', '${item.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openComic('${item.source}','${item.id}')}">
+            <div class="comic-card-cover-container">
+              <img class="comic-card-cover" src="${cover}" alt="${item.title}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_COVER}'">
+              <span class="meta-tag source-tag ${sourceClass}" style="position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 0.65rem;">${sourceLabel}</span>
             </div>
-            <div style="padding: 12px; display: flex; flex-direction: column; gap: 4px;">
-              <div class="comic-item-title" style="font-size: 0.875rem; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;" title="${item.title}">${item.title}</div>
-              <div class="comic-item-author" style="font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${item.author || "佚名"}</div>
+            <div class="comic-card-info">
+              <div class="comic-card-title" title="${item.title}">${item.title}</div>
+              <div class="comic-card-author">${item.author || "佚名"}</div>
             </div>
           </div>
         `;
@@ -488,23 +595,197 @@
       return html;
     }
 
+    // 渲染骨架屏占位，形状匹配最终的漫画栅格
+    function showSkeletonGrid(containerId, count = 12) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      let html = `<div class="skeleton-grid">`;
+      for (let i = 0; i < count; i++) {
+        html += `<div class="skeleton-card"></div>`;
+      }
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+
     // 2. APIs 核心调用方法
     // 2.1 聚合搜索
+    function getSimilarity(keyword, title) {
+      const kw = keyword.toLowerCase().replace(/[\s\-_]/g, '');
+      const t = title.toLowerCase().replace(/[\s\-_]/g, '');
+      
+      if (t.includes(kw)) {
+        return 0.8 + (kw.length / t.length) * 0.2;
+      }
+      
+      const getBigrams = (str) => {
+        const bigrams = new Set();
+        for (let i = 0; i < str.length - 1; i++) {
+          bigrams.add(str.substring(i, i + 2));
+        }
+        return bigrams;
+      };
+      
+      const kwBigrams = getBigrams(kw);
+      const tBigrams = getBigrams(t);
+      
+      if (kwBigrams.size === 0 || tBigrams.size === 0) {
+        const kwChars = new Set(kw.split(''));
+        let matches = 0;
+        for (let char of kwChars) {
+          if (t.includes(char)) matches++;
+        }
+        return kw.length > 0 ? (matches / kw.length) * 0.5 : 0;
+      }
+      
+      let intersection = 0;
+      for (let bigram of kwBigrams) {
+        if (tBigrams.has(bigram)) intersection++;
+      }
+      
+      return (2.0 * intersection) / (kwBigrams.size + tBigrams.size);
+    }
+
+    function renderSearchPage(page) {
+      searchCurrentPage = page;
+      const start = (page - 1) * searchPageSize;
+      const end = page * searchPageSize;
+      const pageItems = searchResults.slice(start, end);
+
+      const listDiv = document.getElementById("search-results-list");
+      listDiv.innerHTML = "";
+
+      if (pageItems.length === 0) {
+        listDiv.innerHTML = `<div style="text-align: center; color: var(--muted-foreground); padding: 60px 0; grid-column: 1 / -1;">无符合搜索条件的结果</div>`;
+      } else {
+        pageItems.forEach(item => {
+          const cover = item.cover || FALLBACK_COVER;
+          const badgeLabel = item.source === 'jm' ? '禁漫天堂' : '哔咔漫画';
+          const badgeClass = item.source;
+          const authors = item.author || '佚名';
+          const categories = item.category || '未分类';
+          const metaText = `作者：${authors}  ·  分类：${categories}`;
+          const description = item.description || '暂无描述信息。';
+
+          const card = document.createElement("div");
+          card.className = "search-result-card";
+          card.setAttribute("role", "button");
+          card.setAttribute("tabindex", "0");
+          card.setAttribute("aria-label", item.title);
+          card.onclick = () => openComic(item.source, item.id);
+          card.onkeydown = (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openComic(item.source, item.id);
+            }
+          };
+          card.innerHTML = `
+            <img class="search-result-card-cover" src="${cover}" alt="${item.title}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_COVER}'">
+            <div class="search-result-card-content">
+              <div>
+                <div class="search-result-card-title" title="${item.title}">${item.title}</div>
+                <div class="search-result-card-desc" title="${description}">${description}</div>
+              </div>
+              <div class="search-result-card-meta" title="${metaText}">${metaText}</div>
+            </div>
+            <div class="search-result-card-badge ${badgeClass}">${badgeLabel}</div>
+          `;
+          listDiv.appendChild(card);
+        });
+      }
+
+      const resultsSection = document.getElementById("search-results-section");
+      if (resultsSection) {
+        resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      renderSearchPagination();
+    }
+
+    function renderSearchPagination() {
+      const container = document.getElementById("search-pagination");
+      container.innerHTML = "";
+
+      const totalPages = Math.ceil(searchResults.length / searchPageSize);
+      if (totalPages <= 1) {
+        return;
+      }
+
+      // Prev Button
+      const prevBtn = document.createElement("button");
+      prevBtn.className = "pagination-btn";
+      prevBtn.innerText = "上一页";
+      prevBtn.disabled = searchCurrentPage === 1;
+      prevBtn.onclick = () => renderSearchPage(searchCurrentPage - 1);
+      container.appendChild(prevBtn);
+
+      // Numeric Buttons
+      let startPage = Math.max(1, searchCurrentPage - 2);
+      let endPage = Math.min(totalPages, searchCurrentPage + 2);
+
+      if (startPage > 1) {
+        const firstBtn = document.createElement("button");
+        firstBtn.className = "pagination-btn";
+        firstBtn.innerText = "1";
+        firstBtn.onclick = () => renderSearchPage(1);
+        container.appendChild(firstBtn);
+
+        if (startPage > 2) {
+          const dots = document.createElement("span");
+          dots.innerText = "...";
+          dots.style.color = "var(--muted-foreground)";
+          dots.style.padding = "0 4px";
+          container.appendChild(dots);
+        }
+      }
+
+      for (let i = startPage; i <= endPage; i++) {
+        const pageBtn = document.createElement("button");
+        pageBtn.className = `pagination-btn${i === searchCurrentPage ? ' active' : ''}`;
+        pageBtn.innerText = i;
+        pageBtn.onclick = () => renderSearchPage(i);
+        container.appendChild(pageBtn);
+      }
+
+      if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+          const dots = document.createElement("span");
+          dots.innerText = "...";
+          dots.style.color = "var(--muted-foreground)";
+          dots.style.padding = "0 4px";
+          container.appendChild(dots);
+        }
+
+        const lastBtn = document.createElement("button");
+        lastBtn.className = "pagination-btn";
+        lastBtn.innerText = totalPages;
+        lastBtn.onclick = () => renderSearchPage(totalPages);
+        container.appendChild(lastBtn);
+      }
+
+      // Next Button
+      const nextBtn = document.createElement("button");
+      nextBtn.className = "pagination-btn";
+      nextBtn.innerText = "下一页";
+      nextBtn.disabled = searchCurrentPage === totalPages;
+      nextBtn.onclick = () => renderSearchPage(searchCurrentPage + 1);
+      container.appendChild(nextBtn);
+    }
+
     async function performSearch() {
       const keyword = document.getElementById("search-input").value.trim();
       if (!keyword) {
-        alert("请输入要检索的漫画名称或 ID（如 jm23143）");
+        showToast("请输入要检索的漫画名称或 ID（如 jm23143）");
         return;
       }
 
       const loader = document.getElementById("search-loader");
-      const bestSection = document.getElementById("best-match-section");
-      const bestCard = document.getElementById("best-card");
-      const grids = document.getElementById("grids-container");
+      const resultsSection = document.getElementById("search-results-section");
 
+      document.body.classList.remove("home-search-mode");
+      document.getElementById("main-container").classList.remove("centered-mode");
+      
       loader.style.display = "block";
-      bestSection.style.display = "none";
-      grids.style.display = "none";
+      resultsSection.style.display = "none";
 
       try {
         const res = await fetch(`/api/search?keyword=${encodeURIComponent(keyword)}`);
@@ -512,60 +793,29 @@
         
         loader.style.display = "none";
 
-        // 渲染最佳匹配 (Best Match)
-        const best = result.best_match;
-        if (best && best.title) {
-          bestSection.style.display = "block";
-          const sourceText = best.source === "jm" ? "禁漫天堂" : "哔咔漫画";
-          bestCard.innerHTML = `
-            <img src="${best.cover || FALLBACK_COVER}" alt="${best.title}" onerror="this.onerror=null; this.src='${FALLBACK_COVER}'">
-            <div class="best-card-info">
-              <div>
-                <div class="best-card-title">${best.title}</div>
-                <div class="meta-row">
-                  <span class="meta-tag source-tag ${best.source}">${sourceText}</span>
-                  ${best.author ? `<span class="meta-tag">作者: ${best.author}</span>` : ''}
-                  ${best.category ? `<span class="meta-tag">分类: ${best.category}</span>` : ''}
-                </div>
-                <div class="best-card-desc">${best.description || '暂无详细描述信息。'}</div>
-              </div>
-              <button class="btn-primary" style="margin-top: 16px; align-self: flex-start;" onclick="openComic('${best.source}', '${best.id}')">立即阅读 / 章节目录</button>
-            </div>
-          `;
-        }
+        const jmItems = result.all_results?.jm || [];
+        const bikaItems = result.all_results?.bika || [];
+        let merged = [...jmItems, ...bikaItems];
 
-        // 渲染独立平台比对结果列表
-        grids.style.display = "grid";
-        const sources = ["jm", "bika"];
-        sources.forEach(src => {
-          const items = result.all_results[src] || [];
-          document.getElementById(`count-${src}`).innerText = items.length;
-          
-          const listDiv = document.getElementById(`list-${src}`);
-          listDiv.innerHTML = "";
-          
-          if (items.length === 0) {
-            listDiv.innerHTML = `<div style="text-align: center; color: var(--muted-foreground); padding: 40px 0; font-size: 0.875rem;">无符合搜索条件的结果</div>`;
-          } else {
-            items.forEach(item => {
-              const itemDiv = document.createElement("div");
-              itemDiv.className = "comic-item";
-              itemDiv.onclick = () => openComic(item.source, item.id);
-              itemDiv.innerHTML = `
-                <img src="${item.cover || FALLBACK_COVER}" alt="${item.title}" onerror="this.onerror=null; this.src='${FALLBACK_COVER}'">
-                <div class="comic-item-info">
-                  <div class="comic-item-title">${item.title}</div>
-                  <div class="comic-item-author">${item.author || "佚名"}</div>
-                </div>
-              `;
-              listDiv.appendChild(itemDiv);
-            });
-          }
+        // Compute similarity and sort
+        merged.forEach(item => {
+          item.similarity = getSimilarity(keyword, item.title);
         });
+
+        // Sort by similarity descending
+        merged.sort((a, b) => b.similarity - a.similarity);
+
+        searchResults = merged;
+        searchCurrentPage = 1;
+
+        document.getElementById("search-results-count").innerText = `为您找到 ${merged.length} 条符合条件的漫画`;
+        resultsSection.style.display = "block";
+
+        renderSearchPage(1);
 
       } catch (err) {
         loader.style.display = "none";
-        alert("聚合搜索发生错误，请检查网络或哔咔账号状态！");
+        showToast("聚合搜索发生错误，请检查网络或哔咔账号状态！");
         console.error(err);
       }
     }
@@ -579,8 +829,8 @@
       const loader = document.getElementById("leaderboard-loader");
       const container = document.getElementById("leaderboard-container");
 
-      loader.style.display = "block";
-      container.innerHTML = "";
+      loader.style.display = "none";
+      showSkeletonGrid("leaderboard-container");
 
       try {
         const res = await fetch(`/api/${source}/leaderboard?mode=${mode}&page=${page}`);
@@ -609,8 +859,8 @@
       const loader = document.getElementById("category-loader");
       const container = document.getElementById("category-container");
 
-      loader.style.display = "block";
-      container.innerHTML = "";
+      loader.style.display = "none";
+      showSkeletonGrid("category-container");
 
       try {
         const res = await fetch(`/api/${source}/category?name=${encodeURIComponent(name)}&page=${page}&sort=${sort}`);
@@ -620,7 +870,7 @@
         if (result.success) {
           container.innerHTML = buildComicsGrid(result.data);
         } else {
-          container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">分类拉取失败: ${result.error || "未知原因"}</div>`;
+          container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">分类加载失败: ${result.error || "未知原因"}</div>`;
         }
       } catch (err) {
         loader.style.display = "none";
@@ -638,8 +888,8 @@
       const loader = document.getElementById("latest-loader");
       const container = document.getElementById("latest-container");
 
-      loader.style.display = "block";
-      container.innerHTML = "";
+      loader.style.display = "none";
+      showSkeletonGrid("latest-container");
 
       try {
         const res = await fetch(`/api/${source}/latest?page=${page}&sort=${sort}`);
@@ -653,7 +903,7 @@
         }
       } catch (err) {
         loader.style.display = "none";
-        container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">网络异常，拉取超时</div>`;
+        container.innerHTML = `<div style="color: var(--destructive); text-align: center; padding: 40px 0;">网络异常，请求超时</div>`;
         console.error(err);
       }
     }
@@ -664,8 +914,8 @@
       const loader = document.getElementById("random-loader");
       const container = document.getElementById("random-container");
 
-      loader.style.display = "block";
-      container.innerHTML = "";
+      loader.style.display = "none";
+      showSkeletonGrid("random-container");
 
       try {
         const res = await fetch(`/api/${source}/random`);
@@ -709,7 +959,7 @@
         const platformName = data.source === "jm" ? "禁漫天堂" : "哔咔漫画";
         document.getElementById("drawer-meta").innerHTML = `
           <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-            <p style="font-size: 0.8125rem;"><strong>源渠道:</strong> <span class="meta-tag source-tag ${data.source}">${platformName}</span></p>
+            <p style="font-size: 0.8125rem;"><strong>来源:</strong> <span class="meta-tag source-tag ${data.source}">${platformName}</span></p>
             <p style="font-size: 0.8125rem;"><strong>作者:</strong> ${data.author || "未知"}</p>
             <p style="font-size: 0.8125rem; color: var(--muted-foreground); line-height: 1.4; max-height: 180px; overflow-y: auto; padding-top: 4px;"><strong>简介:</strong> ${data.description || "暂无描述信息。"}</p>
           </div>
@@ -723,17 +973,150 @@
           chListDiv.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--muted-foreground); padding: 40px 0;">未检索到可读章节，请检查该漫画是否因封禁下架。</div>`;
         } else {
           chapters.forEach(ch => {
+            const row = document.createElement("div");
+            row.className = "episode-row";
+
             const btn = document.createElement("button");
             btn.className = "episode-btn";
             btn.innerText = ch.name;
             btn.title = ch.name;
             btn.onclick = () => openReader(ch.id, ch.name);
-            chListDiv.appendChild(btn);
+            row.appendChild(btn);
+
+            const dlBtn = document.createElement("button");
+            dlBtn.className = "episode-download-btn";
+            dlBtn.innerHTML = '<iconify-icon icon="lucide:download" style="font-size: 1.1rem; display: flex;"></iconify-icon>';
+            dlBtn.title = "打包并下载加密 PDF (AES加密)";
+            dlBtn.onclick = (e) => {
+              e.stopPropagation();
+              downloadChapter(ch.id, ch.name);
+            };
+            row.appendChild(dlBtn);
+
+            chListDiv.appendChild(row);
           });
         }
       } catch (err) {
         document.getElementById("drawer-chapters").innerHTML = `<div style="grid-column: 1 / -1; color: var(--destructive); text-align: center; padding: 40px 0;">加载章节列表失败，请尝试刷新。</div>`;
         console.error(err);
+      }
+    }
+
+    function downloadChapter(chapterId, chapterName) {
+      const title = document.getElementById("drawer-title").innerText;
+      showToast("已开始打包 PDF。<br>文件名即为解密密码，下载完成后请查看文件名。", 8000);
+      const url = `/api/download/${currentSource}/${currentComicId}/${chapterId}?title=${encodeURIComponent(title)}&chapter=${encodeURIComponent(chapterName)}`;
+      window.open(url);
+    }
+
+    function setReaderMode(mode) {
+      readerMode = mode;
+      
+      const overlay = document.getElementById("reader-overlay");
+      const btnScroll = document.getElementById("btn-reader-scroll");
+      const btnPage = document.getElementById("btn-reader-page");
+      
+      if (mode === "scroll") {
+        overlay.classList.remove("mode-page");
+        overlay.classList.add("mode-scroll");
+        btnScroll.classList.add("active");
+        btnPage.classList.remove("active");
+      } else {
+        overlay.classList.remove("mode-scroll");
+        overlay.classList.add("mode-page");
+        btnScroll.classList.remove("active");
+        btnPage.classList.add("active");
+      }
+      
+      renderReaderContent();
+    }
+
+    // 阅读器图片失败时，用占位 DOM 替换 img（CSS 控制样式，跟随阅读器深色背景）
+    function replaceWithReaderError(img, pageNum) {
+      const ph = document.createElement("div");
+      ph.className = "reader-error-page";
+      ph.innerHTML = `
+        <iconify-icon icon="lucide:image-off" style="font-size: 2rem;"></iconify-icon>
+        <span>第 ${pageNum} 页加载失败</span>
+      `;
+      if (img.parentNode) img.parentNode.replaceChild(ph, img);
+    }
+
+    function renderReaderContent() {
+      const container = document.getElementById("reading-container");
+      container.innerHTML = "";
+
+      const total = readerImages.length;
+      document.getElementById("reader-page-indicator").innerText = `${total > 0 ? readerCurrentIndex + 1 : 0} / ${total}`;
+
+      if (total === 0) {
+        container.innerHTML = `<p style="text-align: center; color: var(--destructive); padding: 100px 0;">当前章节暂无图片，或该平台限制访问。</p>`;
+        return;
+      }
+
+      if (readerMode === "scroll") {
+        readerImages.forEach((imgUrl, idx) => {
+          const img = document.createElement("img");
+          img.src = imgUrl;
+          img.alt = `第 ${idx + 1} 页`;
+          img.loading = "lazy";
+          img.onerror = () => replaceWithReaderError(img, idx + 1);
+          container.appendChild(img);
+        });
+      } else {
+        const img = document.createElement("img");
+        img.src = readerImages[readerCurrentIndex];
+        img.alt = `第 ${readerCurrentIndex + 1} 页`;
+        img.onerror = () => replaceWithReaderError(img, readerCurrentIndex + 1);
+        container.appendChild(img);
+      }
+    }
+
+    function navigateReader(direction, event) {
+      if (event) event.stopPropagation();
+      
+      const total = readerImages.length;
+      if (total === 0) return;
+      
+      if (readerMode === "scroll") {
+        const container = document.getElementById("reading-container");
+        if (container) {
+          const scrollAmount = window.innerHeight * 0.8 * direction;
+          container.scrollBy({ top: scrollAmount, behavior: "smooth" });
+        }
+      } else {
+        let newIdx = readerCurrentIndex + direction;
+        if (newIdx < 0) {
+          showToast("这已经是第一页了");
+          return;
+        }
+        if (newIdx >= total) {
+          showToast("这已经是最后一页了，本章已读完");
+          return;
+        }
+        readerCurrentIndex = newIdx;
+        renderReaderContent();
+      }
+    }
+
+    function handleReaderClick(event) {
+      const overlay = document.getElementById("reader-overlay");
+      
+      if (readerMode !== "page") {
+        overlay.classList.toggle("show-controls");
+        return;
+      }
+      
+      const clickY = event.clientY;
+      const height = window.innerHeight;
+      const ratio = clickY / height;
+      
+      if (ratio < 0.35) {
+        navigateReader(-1);
+      } else if (ratio > 0.65) {
+        navigateReader(1);
+      } else {
+        overlay.classList.toggle("show-controls");
       }
     }
 
@@ -747,32 +1130,17 @@
       
       container.innerHTML = `
         <div class="spinner" style="margin-top: 100px;"></div>
-        <p style="text-align: center; color: var(--muted-foreground); margin-top: 12px; font-size: 0.875rem;">正在极速解密漫画切片并读取大图中...</p>
+        <p style="text-align: center; color: var(--muted-foreground); margin-top: 12px; font-size: 0.875rem;">正在加载图片...</p>
       `;
       
       try {
         const res = await fetch(`/api/chapter/${currentSource}/${currentComicId}/${chapterId}`);
         const data = await res.json();
         
-        container.innerHTML = "";
-        const images = data.images || [];
-        if (images.length === 0) {
-          container.innerHTML = `<p style="text-align: center; color: var(--destructive); padding: 100px 0;">当前章节暂无图片，或该平台限制访问。</p>`;
-        } else {
-          images.forEach((imgUrl, idx) => {
-            const img = document.createElement("img");
-            img.src = imgUrl;
-            img.alt = `第 ${idx + 1} 页`;
-            img.loading = "lazy";
-            img.onerror = () => {
-              // 失败重试逻辑或淡出隐藏
-              img.style.border = "1px solid var(--border)";
-              img.style.padding = "20px";
-              img.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='720' height='300'><rect width='100%' height='100%' fill='%2318181b'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23a1a1aa' font-size='16'>第 " + (idx+1) + " 页图片加载失败 (Referer阻挡或网络异常)</text></svg>";
-            };
-            container.appendChild(img);
-          });
-        }
+        readerImages = data.images || [];
+        readerCurrentIndex = 0;
+        
+        setReaderMode(readerMode);
       } catch (err) {
         container.innerHTML = `<p style="text-align: center; color: var(--destructive); padding: 100px 0;">解析漫画图像数据出错，请检查服务器网络状态。</p>`;
         console.error(err);
@@ -780,8 +1148,12 @@
     }
 
     function closeReader() {
-      document.getElementById("reader-overlay").style.display = "none";
+      const overlay = document.getElementById("reader-overlay");
+      overlay.style.display = "none";
+      overlay.classList.remove("show-controls");
       document.getElementById("reading-container").innerHTML = "";
+      readerImages = [];
+      readerCurrentIndex = 0;
     }
 
     function toggleDrawer(show) {
@@ -810,12 +1182,12 @@
       const email = document.getElementById("login-email").value.trim();
       const password = document.getElementById("login-password").value;
       if (!email || !password) {
-        alert("授权邮箱和密码不能为空！");
+        showToast("授权邮箱和密码不能为空！");
         return;
       }
       
       const submitBtn = document.querySelector(".btn-submit");
-      submitBtn.innerText = "正在握手获取授权令牌...";
+      submitBtn.innerText = "正在登录...";
       submitBtn.disabled = true;
       
       try {
@@ -832,7 +1204,7 @@
         submitBtn.disabled = false;
         
         if (result.success) {
-          alert("哔咔账号授权成功！已保存 Token 通道打通。");
+          showToast("哔咔账号登录成功，Token 已保存。");
           document.getElementById("bika-dot").className = "dot green";
           document.getElementById("bika-status-text").innerText = "哔咔已登录";
           hideLoginModal();
@@ -846,15 +1218,31 @@
             }
           }
         } else {
-          alert(`授权失败: ${result.error || "未知原因，请检查账号密码"}`);
+          showToast(`授权失败: ${result.error || "未知原因，请检查账号密码"}`);
         }
       } catch (err) {
         submitBtn.innerText = "授权绑定";
         submitBtn.disabled = false;
-        alert("连接服务器发生通讯故障，请重试！");
-        console.error(err);
+        showToast("连接服务器发生通讯故障，请重试！");
       }
     }
+
+    // Keyboard listener for reader
+    window.addEventListener("keydown", (e) => {
+      const reader = document.getElementById("reader-overlay");
+      if (reader && reader.style.display === "flex") {
+        if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+          e.preventDefault();
+          navigateReader(-1);
+        } else if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === " ") {
+          e.preventDefault();
+          navigateReader(1);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          closeReader();
+        }
+      }
+    });
   </script>
 </body>
 </html>

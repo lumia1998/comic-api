@@ -5,6 +5,7 @@ import io
 import math
 import shutil
 import tempfile
+import time
 import urllib.parse
 from difflib import SequenceMatcher
 from typing import List, Dict, Any
@@ -117,16 +118,37 @@ class AggregatorService:
             print(f"[Aggregator] get_chapter_images error source={source} ch_id={chapter_id}: {e}")
             return []
 
-    def _download_image(self, client: Any, url: str) -> bytes:
-        """使用 Client 自身的 BaseClient.request 来下载图片二进制"""
+    def _download_image(self, client: Any, url: str, retries: int = 3) -> bytes:
+        """使用 Client 自身的 BaseClient.request 来下载图片二进制。
+
+        JM 图片 CDN 节点不稳定，单张图常随机返回 403/连接重置，
+        因此加入重试+退避，避免单次失败导致整张图裂掉。
+        """
+        # JM 图片服务对 Referer 较敏感，使用站点根域而非图片自身 URL
+        parsed = urllib.parse.urlparse(url)
+        referer = f"{parsed.scheme}://{parsed.netloc}/"
         headers = {
-            "Referer": url,
-            "User-Agent": client.ua
+            "Referer": referer,
+            "User-Agent": client.ua,
         }
-        res = client.request("GET", url, headers=headers, timeout=30)
-        if res.status_code != 200:
-            raise Exception(f"Failed to download image from {url}: status={res.status_code}")
-        return res.content
+
+        last_err = None
+        for attempt in range(max(1, retries)):
+            try:
+                res = client.request("GET", url, headers=headers, timeout=30)
+                if res.status_code == 200 and res.content:
+                    return res.content
+                last_err = Exception(
+                    f"Failed to download image from {url}: status={res.status_code}"
+                )
+            except Exception as e:
+                last_err = e
+
+            # 退避后重试（0.5s, 1s, ...）
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+
+        raise last_err or Exception(f"Failed to download image from {url}")
 
     def _jm_image_filename(self, url: str) -> str:
         path = urllib.parse.urlparse(url).path
