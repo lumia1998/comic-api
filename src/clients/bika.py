@@ -6,6 +6,7 @@ import hmac
 import hashlib
 import json
 import math
+import threading
 from typing import List, Dict, Any
 from urllib.parse import urlparse, urlencode
 from src.config import Config
@@ -15,20 +16,109 @@ class BikaClient(BaseClient):
     def __init__(self):
         super().__init__()
         self.api_base = Config.BIKA_DEFAULT_API_BASE
+        self._auth_lock = threading.RLock()
         self.authorization = ""
         data_dir = os.environ.get("DATA_DIR", "")
-        if data_dir and os.path.isdir(data_dir):
+        if data_dir:
             self.token_file = os.path.join(data_dir, ".bika_token")
         else:
             self.token_file = str(Path(__file__).resolve().parents[2] / ".bika_token")
-        
-        # 自动加载 Token
+        self.credentials_file = os.path.join(os.path.dirname(self.token_file), ".bika_credentials.json")
+
+        stored_account, stored_password = self._read_persisted_credentials()
+        if stored_account and stored_password:
+            self._account = stored_account
+            self._password = stored_password
+        else:
+            self._account = os.environ.get("BIKA_ACCOUNT", "").strip()
+            self._password = os.environ.get("BIKA_PASSWORD", "")
+
+        self.authorization = self._read_persisted_token()
+
+    def _read_persisted_credentials(self):
+        try:
+            if os.path.exists(self.credentials_file):
+                with open(self.credentials_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                account = str(data.get("account", "")).strip()
+                password = str(data.get("password", ""))
+                if account and password:
+                    return account, password
+        except Exception as e:
+            print(f"[BikaClient] Load credentials error: {e}")
+        return "", ""
+
+    def _read_persisted_token(self) -> str:
         try:
             if os.path.exists(self.token_file):
                 with open(self.token_file, "r", encoding="utf-8") as f:
-                    self.authorization = f.read().strip()
-        except Exception:
-            pass
+                    return f.read().strip()
+        except Exception as e:
+            print(f"[BikaClient] Load token error: {e}")
+        return ""
+
+    def _atomic_write(self, file_path: str, content: str) -> None:
+        token_dir = os.path.dirname(file_path) or "."
+        os.makedirs(token_dir, exist_ok=True)
+        temp_file = f"{file_path}.{os.getpid()}.{threading.get_ident()}.tmp"
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, file_path)
+        finally:
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass
+
+    def _persist_token(self, token: str) -> None:
+        self._atomic_write(self.token_file, token)
+
+    def _persist_credentials(self, account: str, password: str) -> None:
+        credentials = json.dumps(
+            {"account": account, "password": password},
+            ensure_ascii=False,
+        )
+        self._atomic_write(self.credentials_file, credentials)
+
+    def _clear_authorization_locked(self, expected_token: str = "") -> None:
+        if expected_token and self.authorization not in ("", expected_token):
+            return
+
+        self.authorization = ""
+        if not os.path.exists(self.token_file):
+            return
+
+        try:
+            persisted_token = self._read_persisted_token()
+            if not expected_token or persisted_token == expected_token:
+                os.remove(self.token_file)
+        except Exception as e:
+            print(f"[BikaClient] Remove token error: {e}")
+
+    def _credentials_available(self) -> bool:
+        return bool(self._account and self._password)
+
+    def ensure_authenticated(self) -> None:
+        if self.authorization:
+            return
+
+        with self._auth_lock:
+            if self.authorization:
+                return
+
+            persisted_token = self._read_persisted_token()
+            if persisted_token:
+                self.authorization = persisted_token
+                return
+
+            if not self._credentials_available():
+                raise Exception("哔咔未登录，请在 .env 配置账号密码或在后台绑定账号。")
+
+            self._login_locked(self._account, self._password)
 
     def clean_path(self, path: str) -> str:
         """提取纯路径，包括后面的 Query String"""
@@ -51,7 +141,14 @@ class BikaClient(BaseClient):
         signature = hmac.new(secret, raw.encode("utf-8"), hashlib.sha256).hexdigest()
         return signature
 
-    def bika_request(self, path: str, method: str = "GET", params: dict = None, json_body: dict = None) -> Any:
+    def _send_bika_request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: dict = None,
+        json_body: dict = None,
+        authorization: str = "",
+    ):
         url = f"{self.api_base}{path}"
         
         # 核心修复：如果存在 params，必须将其拼接到签名 path 的尾部！
@@ -84,8 +181,8 @@ class BikaClient(BaseClient):
             "image-quality": "original"
         }
         
-        if self.authorization:
-            headers["authorization"] = self.authorization
+        if authorization:
+            headers["authorization"] = authorization
             
         kwargs = {
             "headers": headers,
@@ -97,47 +194,97 @@ class BikaClient(BaseClient):
         if json_body is not None:
             kwargs["data"] = json.dumps(json_body).encode("utf-8")
             
-        res = self.request(method, url, **kwargs)
+        return self.request(method, url, **kwargs)
+
+    @staticmethod
+    def _response_error(res) -> str:
+        try:
+            return str(res.json().get("message", ""))
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _is_auth_failure(res, err_msg: str) -> bool:
+        return res.status_code == 401 or err_msg.lower() == "unauthorized"
+
+    def _login_locked(self, account: str, password: str) -> str:
+        res = self._send_bika_request(
+            "auth/sign-in",
+            method="POST",
+            json_body={"email": account, "password": password},
+            authorization="",
+        )
         if res.status_code < 200 or res.status_code >= 300:
-            err_msg = ""
-            try:
-                err_msg = res.json().get("message", "")
-            except Exception:
-                pass
-            
-            # 自动捕获 401 Unauthorized，清空本地过期 Token
-            if res.status_code == 401 or err_msg == "unauthorized":
-                self.authorization = ""
-                if os.path.exists(self.token_file):
-                    try:
-                        os.remove(self.token_file)
-                    except Exception:
-                        pass
-                        
+            err_msg = self._response_error(res)
             raise Exception(f"Bika request failed status={res.status_code} error={err_msg}")
-            
+
+        token = res.json().get("data", {}).get("token", "")
+        if not token:
+            raise Exception("哔咔登录成功但响应中没有 Token。")
+
+        self._persist_credentials(account, password)
+        self._persist_token(token)
+        self._account = account
+        self._password = password
+        self.authorization = token
+        return token
+
+    def _refresh_authorization(self, failed_token: str) -> None:
+        with self._auth_lock:
+            if self.authorization and self.authorization != failed_token:
+                return
+
+            persisted_token = self._read_persisted_token()
+            if persisted_token and persisted_token != failed_token:
+                self.authorization = persisted_token
+                return
+
+            if not self._credentials_available():
+                self._clear_authorization_locked(failed_token)
+                raise Exception("哔咔登录已失效，且未配置 BIKA_ACCOUNT/BIKA_PASSWORD。")
+
+            try:
+                self._login_locked(self._account, self._password)
+            except Exception:
+                self._clear_authorization_locked(failed_token)
+                raise
+
+    def bika_request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: dict = None,
+        json_body: dict = None,
+        _auth_retry: bool = False,
+    ) -> Any:
+        used_token = self.authorization
+        res = self._send_bika_request(path, method, params, json_body, used_token)
+        if res.status_code < 200 or res.status_code >= 300:
+            err_msg = self._response_error(res)
+            if self._is_auth_failure(res, err_msg):
+                if used_token and not _auth_retry:
+                    self._refresh_authorization(used_token)
+                    return self.bika_request(path, method, params, json_body, _auth_retry=True)
+
+                if used_token:
+                    with self._auth_lock:
+                        self._clear_authorization_locked(used_token)
+
+            raise Exception(f"Bika request failed status={res.status_code} error={err_msg}")
+
         return res.json()
 
     def login(self, account: str, password: str) -> str:
         """登录哔咔"""
-        res = self.bika_request("auth/sign-in", method="POST", json_body={
-            "email": account,
-            "password": password
-        })
-        token = res.get("data", {}).get("token", "")
-        if token:
-            self.authorization = token
-            try:
-                with open(self.token_file, "w", encoding="utf-8") as f:
-                    f.write(token)
-            except Exception as e:
-                print(f"[BikaClient] Save token error: {e}")
-        return token
+        account = account.strip()
+        if not account or not password:
+            raise Exception("哔咔账号和密码不能为空。")
+        with self._auth_lock:
+            return self._login_locked(account, password)
 
     def search(self, keyword: str, page: int = 1) -> List[Dict[str, Any]]:
         """搜索漫画"""
-        if not self.authorization:
-            raise Exception("哔咔未登录，请先在后台绑定/登录账号。")
+        self.ensure_authenticated()
             
         try:
             res = self.bika_request("comics/advanced-search", method="POST", params={
@@ -180,8 +327,7 @@ class BikaClient(BaseClient):
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
         """获取详情并加载全部章节分页"""
-        if not self.authorization:
-            raise Exception("哔咔未登录，请先在后台绑定/登录账号。")
+        self.ensure_authenticated()
             
         try:
             res = self.bika_request(f"comics/{comic_id}", method="GET")
@@ -234,8 +380,7 @@ class BikaClient(BaseClient):
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
         """获取章节页面图片"""
-        if not self.authorization:
-            raise Exception("哔咔未登录，请先在后台绑定/登录账号。")
+        self.ensure_authenticated()
             
         try:
             image_urls = []
@@ -292,9 +437,8 @@ class BikaClient(BaseClient):
 
     def get_random(self) -> List[Dict[str, Any]]:
         """获取随机本子"""
-        if not self.authorization:
-            return []
         try:
+            self.ensure_authenticated()
             res = self.bika_request("comics/random", method="GET")
             return self._parse_comics_list(res)
         except Exception as e:
@@ -303,11 +447,10 @@ class BikaClient(BaseClient):
 
     def get_leaderboard(self, mode: str = "day") -> List[Dict[str, Any]]:
         """获取排行榜 (day/week/month)"""
-        if not self.authorization:
-            return []
         days_map = {"day": "H24", "week": "D7", "month": "D30"}
         days = days_map.get(mode, "H24")
         try:
+            self.ensure_authenticated()
             res = self.bika_request("comics/leaderboard", method="GET", params={"tt": days, "ct": "VC"})
             return self._parse_comics_list(res)
         except Exception as e:
@@ -319,11 +462,10 @@ class BikaClient(BaseClient):
         筛选分类下的本子
         sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看
         """
-        if not self.authorization:
-            return []
         valid_sorts = {"dd", "da", "ld", "vd"}
         s = sort if sort in valid_sorts else "dd"
         try:
+            self.ensure_authenticated()
             res = self.bika_request("comics", method="GET", params={"page": str(page), "c": category_name, "s": s})
             return self._parse_comics_list(res)
         except Exception as e:
@@ -335,11 +477,10 @@ class BikaClient(BaseClient):
         获取本子列表（支持排序）
         sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看
         """
-        if not self.authorization:
-            return []
         valid_sorts = {"dd", "da", "ld", "vd"}
         s = sort if sort in valid_sorts else "dd"
         try:
+            self.ensure_authenticated()
             res = self.bika_request("comics", method="GET", params={"page": str(page), "s": s})
             return self._parse_comics_list(res)
         except Exception as e:

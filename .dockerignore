@@ -7,6 +7,8 @@ __pycache__
 .agents/
 *.log
 *.token
+.bika_credentials.json
+data/
 skills-lock.json
 tests/
 test_*.py

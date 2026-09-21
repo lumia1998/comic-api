@@ -1204,7 +1204,7 @@
         submitBtn.disabled = false;
         
         if (result.success) {
-          showToast("哔咔账号登录成功，Token 已保存。");
+          showToast("哔咔账号登录成功，Token 已持久化保存。");
           document.getElementById("bika-dot").className = "dot green";
           document.getElementById("bika-status-text").innerText = "哔咔已登录";
           hideLoginModal();

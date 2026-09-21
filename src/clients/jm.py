@@ -2,6 +2,7 @@ import time
 import json
 import hashlib
 import base64
+import threading
 from typing import List, Dict, Any, Tuple
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
@@ -15,6 +16,7 @@ class JmClient(BaseClient):
         self.image_base = Config.JM_FALLBACK_IMAGE_BASE
         self.jwt_token = ""
         self.host_resolved = False
+        self._auth_lock = threading.RLock()
 
     def md5_hex(self, text: str) -> str:
         return hashlib.md5(text.encode("utf-8")).hexdigest()
@@ -122,23 +124,33 @@ class JmClient(BaseClient):
             print(f"[JmClient] Failed to resolve dynamic hosts: {e}")
         return False
 
-    def get_api_headers(self, ts: int) -> dict:
+    def get_api_headers(self, ts: int, jwt_token: str = "") -> dict:
         token = self.md5_hex(f"{ts}{Config.JM_VERSION}")
         headers = {
             "token": token,
             "tokenparam": f"{ts},{Config.JM_VERSION}",
             "accept-encoding": "gzip",
         }
-        if self.jwt_token:
-            headers["Authorization"] = f"Bearer {self.jwt_token}"
+        if jwt_token:
+            headers["Authorization"] = f"Bearer {jwt_token}"
         return headers
 
-    def jm_request(self, path: str, method: str = "GET", params: dict = None, data: dict = None) -> Any:
+    def jm_request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: dict = None,
+        data: dict = None,
+        _auth_retry: bool = False,
+        _force_no_auth: bool = False,
+    ) -> Any:
         if not self.host_resolved:
             self.resolve_dynamic_hosts()
 
         ts = int(time.time())
-        headers = self.get_api_headers(ts)
+        with self._auth_lock:
+            used_jwt = "" if _force_no_auth else self.jwt_token
+        headers = self.get_api_headers(ts, used_jwt)
         
         base_url = self.api_bases[0] if self.api_bases else Config.JM_FALLBACK_API_BASE
         url = f"{base_url}{path}"
@@ -156,6 +168,25 @@ class JmClient(BaseClient):
 
         try:
             res = self.request(method, url, **kwargs)
+            if res.status_code in (401, 403) and used_jwt and not _auth_retry:
+                retry_without_auth = False
+                with self._auth_lock:
+                    if self.jwt_token == used_jwt:
+                        self.jwt_token = ""
+                        retry_without_auth = True
+                        try:
+                            self.session.cookies.clear()
+                        except Exception:
+                            pass
+                self.host_resolved = False
+                return self.jm_request(
+                    path,
+                    method,
+                    params,
+                    data,
+                    _auth_retry=True,
+                    _force_no_auth=retry_without_auth,
+                )
             if res.status_code < 200 or res.status_code >= 300:
                 raise Exception(f"JM request failed with status: {res.status_code}")
         except Exception as e:
@@ -165,7 +196,8 @@ class JmClient(BaseClient):
         decrypted = self.decrypt_response(res.content, ts)
         
         if isinstance(decrypted, dict) and "jwttoken" in decrypted:
-            self.jwt_token = decrypted["jwttoken"]
+            with self._auth_lock:
+                self.jwt_token = decrypted["jwttoken"]
 
         return decrypted
 

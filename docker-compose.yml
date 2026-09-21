@@ -1,12 +1,16 @@
 services:
   comic-api:
-    image: ghcr.io/lumia1998/comic-api:main
+    build:
+      context: .
+    image: comic-api:local
     container_name: comic-api
     ports:
       - "34587:8699"
     environment:
       - TZ=Asia/Shanghai
       - DATA_DIR=/app/data
+      - BIKA_ACCOUNT=${BIKA_ACCOUNT:-}
+      - BIKA_PASSWORD=${BIKA_PASSWORD:-}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

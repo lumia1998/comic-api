@@ -6,7 +6,10 @@ from fastapi import FastAPI, Request, Query, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from dotenv import load_dotenv
 from src.services.aggregator import AggregatorService, ComicApiError
+
+load_dotenv()
 
 app = FastAPI(
     title="Aggregated Comic API",
@@ -107,7 +110,7 @@ async def api_bika_login(data: dict):
         
     try:
         token = aggregator.bika.login(account, password)
-        return {"success": True, "token": token}
+        return {"success": True, "authenticated": bool(token), "token": token}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

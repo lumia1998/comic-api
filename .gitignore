@@ -1,5 +1,6 @@
 # Sensitive credentials and tokens
 .bika_token
+.bika_credentials.json
 .env
 *.token
 *.cache
