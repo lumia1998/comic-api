@@ -114,13 +114,13 @@ function configureAccount(){
 }
 
 function saveProgress(){const r=state.reader;if(!r||!r.images.length)return;const value={chapterId:r.chapterId,chapterName:r.chapterName,index:r.index,updatedAt:Date.now()};saveLocal(progressKey(r.book,r.chapterId),value);saveLocal(lastKey(r.book),value);}
-async function openReader(chapterId){
+async function openReader(chapterId,startAt){
   saveProgress();const book=state.detail,chapter=book.chapters.find(c=>String(c.id)===chapterId);if(!chapter)return;
   const request=++state.readerRequest;state.readerAbort?.abort();state.readerAbort=new AbortController();state.reader=null;
   $('reader-title').textContent=`${book.title} · ${chapter.name}`;$('reader-pages').textContent='正在获取章节…';$('page-status').textContent='';
   if(!$('reader-dialog').open)$('reader-dialog').showModal();
   try{const data=await api(`/api/chapter/${enc(book.source)}/${enc(book.id)}/${enc(chapterId)}`,{signal:state.readerAbort.signal});if(request!==state.readerRequest)return;
-    const saved=readLocal(progressKey(book,chapterId));state.reader={book,chapterId,chapterName:chapter.name,images:data.images,index:Math.max(0,Math.min(Number(saved?.index)||0,data.images.length-1))};renderReader();
+    const saved=readLocal(progressKey(book,chapterId));const resume=Math.max(0,Math.min(Number(saved?.index)||0,data.images.length-1));state.reader={book,chapterId,chapterName:chapter.name,images:data.images,index:typeof startAt==='number'?(startAt<0?Math.max(0,data.images.length-1):0):resume};renderReader();
   }catch(e){if(request===state.readerRequest&&e.name!=='AbortError')$('reader-pages').textContent=e.message;}
 }
 function renderReader(){
@@ -139,8 +139,8 @@ function renderReader(){
   }
   saveProgress();
 }
-function movePage(delta){const r=state.reader;if(!r)return;const index=r.index+delta;if(index<0||index>=r.images.length){moveChapter(delta);return;}r.index=index;if($('reader-mode').value==='page')renderReader();else{$('reader-pages').children[index]?.scrollIntoView({block:'start',behavior:'smooth'});saveProgress();}}
-function moveChapter(delta){const r=state.reader;if(!r)return;const chapters=r.book.chapters,index=chapters.findIndex(c=>String(c.id)===r.chapterId);if(chapters[index+delta])run(()=>openReader(String(chapters[index+delta].id)));else toast('没有更多章节');}
+function movePage(delta){const r=state.reader;if(!r)return;const index=r.index+delta;if(index<0||index>=r.images.length){moveChapter(delta,true);return;}r.index=index;if($('reader-mode').value==='page')renderReader();else{$('reader-pages').children[index]?.scrollIntoView({block:'start',behavior:'smooth'});saveProgress();}}
+function moveChapter(delta,turn){const r=state.reader;if(!r)return;const chapters=r.book.chapters,index=chapters.findIndex(c=>String(c.id)===r.chapterId);if(chapters[index+delta])run(()=>openReader(String(chapters[index+delta].id),turn?(delta>0?0:-1):undefined));else toast('没有更多章节');}
 function closeReader(){saveProgress();state.readerAbort?.abort();++state.readerRequest;state.observer?.disconnect();state.reader=null;$('reader-dialog').close();$('reader-pages').replaceChildren();if(state.detail)renderDetail();}
 
 document.querySelectorAll('[data-tab]').forEach(n=>n.onclick=()=>showTab(n.dataset.tab));
