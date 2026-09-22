@@ -139,7 +139,7 @@ function renderReader(){
   }
   saveProgress();
 }
-function movePage(delta){const r=state.reader;if(!r)return;const index=r.index+delta;if(index<0||index>=r.images.length){toast('已到章节边界，可切换上一章或下一章');return;}r.index=index;if($('reader-mode').value==='page')renderReader();else{$('reader-pages').children[index]?.scrollIntoView({block:'start',behavior:'smooth'});saveProgress();}}
+function movePage(delta){const r=state.reader;if(!r)return;const index=r.index+delta;if(index<0||index>=r.images.length){moveChapter(delta);return;}r.index=index;if($('reader-mode').value==='page')renderReader();else{$('reader-pages').children[index]?.scrollIntoView({block:'start',behavior:'smooth'});saveProgress();}}
 function moveChapter(delta){const r=state.reader;if(!r)return;const chapters=r.book.chapters,index=chapters.findIndex(c=>String(c.id)===r.chapterId);if(chapters[index+delta])run(()=>openReader(String(chapters[index+delta].id)));else toast('没有更多章节');}
 function closeReader(){saveProgress();state.readerAbort?.abort();++state.readerRequest;state.observer?.disconnect();state.reader=null;$('reader-dialog').close();$('reader-pages').replaceChildren();if(state.detail)renderDetail();}
 
