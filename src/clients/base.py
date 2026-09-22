@@ -1,5 +1,7 @@
 import random
 import uuid
+import threading
+from src.errors import ComicApiError
 try:
     from curl_cffi import requests
 except ImportError:
@@ -49,6 +51,7 @@ class BaseClient:
         self.device_id = "".join(random.choices("0123456789abcdef", k=16))
         self.ua = generate_android_user_agent(self.device_id)
         self.session = requests.Session()
+        self._request_slots = threading.BoundedSemaphore(4)
         
     def request(self, method: str, url: str, **kwargs):
         # 强制添加 impersonate 伪装 TLS
@@ -60,4 +63,16 @@ class BaseClient:
             headers["user-agent"] = self.ua
         kwargs["headers"] = headers
         
-        return self.session.request(method, url, **kwargs)
+        kwargs.setdefault("timeout", 20)
+        if not self._request_slots.acquire(timeout=10):
+            raise ComicApiError("图源请求繁忙，请稍后重试", 429, "busy")
+        try:
+            try:
+                response = self.session.request(method, url, **kwargs)
+            except Exception as exc:
+                timeout = "timeout" in type(exc).__name__.lower() or "timed out" in str(exc).lower()
+                raise ComicApiError("图源请求超时" if timeout else "无法连接图源", 504 if timeout else 502,
+                                    "upstream_timeout" if timeout else "upstream_network") from exc
+            return response
+        finally:
+            self._request_slots.release()

@@ -188,7 +188,8 @@ class JmClient(BaseClient):
                     _force_no_auth=retry_without_auth,
                 )
             if res.status_code < 200 or res.status_code >= 300:
-                raise Exception(f"JM request failed with status: {res.status_code}")
+                from src.errors import ComicApiError
+                raise ComicApiError(f"图源返回 HTTP {res.status_code}", res.status_code if res.status_code in (401,403,404,429) else 502, "upstream_error", "jm")
         except Exception as e:
             self.host_resolved = False  # Reset on error to allow failover next time
             raise e
@@ -265,7 +266,7 @@ class JmClient(BaseClient):
             return results
         except Exception as e:
             print(f"[JmClient] search error: {e}")
-            return []
+            raise
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
         """获取漫画详情 (修正：改回 GET 请求，参数 id)"""
@@ -310,7 +311,7 @@ class JmClient(BaseClient):
             }
         except Exception as e:
             print(f"[JmClient] get_comic_detail error: {e}")
-            return {}
+            raise
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
         """获取章节的所有图片链接 (修正：改回 GET 请求 /chapter, 参数 id)"""
@@ -341,7 +342,7 @@ class JmClient(BaseClient):
             return image_urls
         except Exception as e:
             print(f"[JmClient] get_chapter_images error: {e}")
-            return []
+            raise
 
     def _parse_jm_comics(self, content_list: list) -> List[Dict[str, Any]]:
         """辅助解析禁漫返回的漫画列表"""
@@ -382,7 +383,7 @@ class JmClient(BaseClient):
             return []
         except Exception as e:
             print(f"[JmClient] get_recommend error: {e}")
-            return []
+            raise
 
     def get_latest(self, page: int = 1) -> List[Dict[str, Any]]:
         """获取最新更新本子"""
@@ -391,7 +392,7 @@ class JmClient(BaseClient):
             return self._parse_jm_comics(res)
         except Exception as e:
             print(f"[JmClient] get_latest error: {e}")
-            return []
+            raise
 
     def get_leaderboard(self, mode: str = "day", page: int = 1) -> List[Dict[str, Any]]:
         """获取排行榜 (day/week/month/total)"""
@@ -408,7 +409,7 @@ class JmClient(BaseClient):
             return self._parse_jm_comics(content)
         except Exception as e:
             print(f"[JmClient] get_leaderboard error: {e}")
-            return []
+            raise
 
     def get_category_comics(self, category_name: str, page: int = 1, sort: str = "new") -> List[Dict[str, Any]]:
         """
@@ -436,4 +437,4 @@ class JmClient(BaseClient):
             return self._parse_jm_comics(content)
         except Exception as e:
             print(f"[JmClient] get_category_comics error: {e}")
-            return []
+            raise

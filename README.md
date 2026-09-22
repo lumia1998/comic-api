@@ -1,88 +1,96 @@
 # Comic API
 
-多源漫画聚合搜索与下载服务，整合禁漫天堂 (JmComic) 和哔咔 (Bika) 两大平台。
+Python / FastAPI 多图源漫画 WebUI。内置禁漫、哔咔、拷贝漫画；前端按插件能力生成浏览入口与登录表单。
 
-## 功能特性
+右上角「图源管理」显示图源列表，每行进入独立「设置」。有登录能力的图源提供「登录凭证」子页面，再填写账号与密码；拷贝漫画提供服务器地址设置，保存到 SQL，优先于环境变量，新请求立即生效。正在执行的请求继续使用原地址；留空可恢复部署默认地址。服务器地址仅接受不含嵌入凭据的 HTTPS URL，只应填写可信服务器。
 
-- **多源聚合搜索** - 同时查询禁漫和哔咔，智能匹配最佳结果
-- **漫画详情** - 获取章节列表、作者、封面等信息
-- **章节图片获取** - 支持禁漫图片解密
-- **PDF下载** - 自适应压缩 + AES-256加密
-- **随机推荐** - 发现新漫画
-- **排行榜** - 日/周/月榜单
-- **分类筛选** - 按类别浏览
-- **最近更新** - 查看最新上架
-
-## 快速开始
-
-### Docker 部署 (推荐)
-
-复制环境变量示例并填写哔咔账号：
+## 部署
 
 ```bash
 cp .env.example .env
-```
-
-`.env`：
-
-```dotenv
-BIKA_ACCOUNT=你的哔咔邮箱
-BIKA_PASSWORD=你的哔咔密码
-```
-
-启动服务：
-
-```bash
 docker compose up -d --build
 ```
 
-服务启动后访问: http://localhost:34587
+访问 http://localhost:34587 。哔咔账号可以在页面绑定，也可以在首次启动前填入 `.env`。禁漫与拷贝当前使用游客接口，不显示账号登录。
 
-### 手动部署
+本地运行：
 
 ```bash
-cp .env.example .env
 pip install -r requirements.txt
 python main.py
 ```
 
-服务默认监听: http://127.0.0.1:8699
+本地端口 8699。只运行一个服务进程 / 一个 Uvicorn worker：下载队列与图源限流器在进程内管理，不支持多个实例共享数据库。当前没有站点用户认证；图源账号、书库与下载属于服务实例，**不要直接暴露到公网**，需要时在反向代理增加访问认证。
 
-## API 接口
+## 数据与功能
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/search?keyword=` | 聚合搜索 |
-| GET | `/api/comic/{source}/{id}` | 漫画详情 |
-| GET | `/api/chapter/{source}/{comic_id}/{chapter_id}` | 章节图片 |
-| POST | `/api/bika/login` | 哔咔登录 |
-| GET | `/api/download/{source}/{comic_id}/{chapter_id}` | 下载PDF |
-| GET | `/api/{source}/random` | 随机推荐 |
-| GET | `/api/{source}/leaderboard?mode=` | 排行榜 |
-| GET | `/api/{source}/latest?page=` | 最近更新 |
-| GET | `/api/{source}/category?name=&sort=` | 分类筛选 |
+- **混合搜索**：各图源结果统一展示并标注来源，按标题完全匹配、包含关键词、字符相似度排序；忽略大小写、全半角与标点差异。同名的不同图源版本保留独立入口。排序范围是本次返回的结果（聚合搜索为各源首页），不是全站全部漫画，也不包含语义理解或简繁转换。
 
-**source 参数**: `jm` (禁漫) / `bika` (哔咔)
+- **图源账号**：SQLite 按图源隔离，账号与 Token 使用 AES-GCM 加密。首次启动自动导入原 `.bika_token` / `.bika_credentials.json`，之后以 SQL 为准；退出登录不会重新导入。旧文件不会自动删除，确认迁移成功后可自行清理其中的明文凭据。
+- **书库**：收藏、分类、移除、缓存详情与手动检查章节更新；同一本漫画的不同图源记录互不覆盖。尚未实现后台定时追更。
+- **下载任务**：排队、图片进度、打包状态、取消、失败重试、取回 PDF、删除任务及文件。单任务执行，最多 100 个排队任务。重启后未结束的任务标记为中断，需手动重试；重试从头开始，不是断点续传。取消会等待已开始的网络请求或打包操作退出并清理文件。
+- **阅读进度**：仅保存在浏览器 localStorage，按图源、漫画和章节隔离；支持续读、滚动/翻页模式。不会写入服务器 SQL，也不跨浏览器同步。清除站点数据或更换访问域名/端口会影响可见进度。
+- **明确错误**：接口区分登录失效、限流、网络超时、上游错误与参数错误。聚合搜索保留可用图源结果，并单独报告失败源，不把失败伪装成空结果。
+- **并发边界**：每源最多 2 个业务调用；每客户端最多 4 个网络请求；阅读图片最多 8 个并发处理；PDF 默认最多 4 个图片下载。同步请求在线程执行，取消等待不会提前释放仍在工作的线程配额。拷贝章节请求间隔至少 6 秒，并缓存成功结果 10 分钟。
 
-## 配置
+默认数据目录为 `./data`，可用 `DATA_DIR` 修改。Docker 已挂载 `./data:/app/data`：
 
-推荐在 `.env` 中设置 `BIKA_ACCOUNT` 和 `BIKA_PASSWORD`。服务优先加载持久化 Token；Token 不存在或失效时，会使用账号密码自动登录并把新 Token 保存到数据目录。
+| 路径 | 内容 |
+| --- | --- |
+| `comic.sqlite` | 图源凭据密文、书库、下载记录 |
+| `credentials.key` | 凭据加密密钥，必须保密并与数据库一起备份 |
+| `downloads/` | 已生成的 PDF |
+| `plugins/` | 自定义可信 Python 图源 |
 
-也可以不配置 `.env`，直接通过 WebUI 或接口手动登录绑定账号。手动登录成功后，账号密码会明文保存到数据目录，供容器重启和 Token 失效后自动重新登录：
+备份建议先停止服务再复制整个数据目录，避免遗漏 SQLite WAL。密钥丢失后无法解密旧账号。加密不防御可同时读取数据库和密钥的主机管理员。PDF 密码显示在任务卡上，沿用确定性六位密码，主要用于阅读流程而非强机密保护。
+
+## 插件扩展
+
+内置插件位于 `src/sources/`；自定义插件放到 `DATA_DIR/plugins/*.py`，重启自动发现。每个模块导出 `create_plugin(store)`，返回 `SourcePlugin` 子类实例，提供唯一 `id`、`name` 与 `capabilities`。插件是**可信的服务器 Python 代码**，没有沙箱；不要安装不可信文件，也不直接兼容 Breeze JavaScript 插件或 Suwayomi APK。
+
+核心接口：
+
+- `search(keyword, page)`：漫画列表，每项含 `id/title/cover/author`。
+- `detail(comic_id)`：漫画详情及 `chapters: [{id, name, order}]`。
+- `pages(comic_id, chapter_id)`：有序图片 URL 列表。
+- `client.request(...)`：图片请求客户端；可选 `transform_image(data, chapter_id, url)` 解码图片。
+- 可选 `browse(action, **filters)`、`login(values)`、`logout()`、`account_status()`；通过 `categories/sorts/leaderboard_modes/login_fields` 描述界面。
+- 可选 `settings_fields`、`settings()` 描述非敏感设置；`save_settings(values)` 持久化并返回替换用的新插件实例。不要把密码或 Token 放进设置清单，应使用登录凭证接口。
+
+参考 `src/sources/bika.py` 的账号插件和 `src/sources/copy.py` 的游客插件。账号可使用 `store.save_account(plugin.id, data)` 保存，加密由存储层处理。
+
+拷贝适配器参考 [Breeze-plugin-copyComic](https://github.com/deretame/Breeze-plugin-copyComic) 的 API 协议，在 Python 中实现搜索、章节分组分页、图片顺序、推荐与排行榜。`COPY_API_BASE` 可修改 API 地址；上游域名、限流与接口变化可能导致服务不可用。
+
+## API
+
+完整参数见 `/docs`。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/sources` | 插件能力与账号状态，不返回凭据 |
+| POST / DELETE | `/api/sources/{source}/login` / `/api/sources/{source}/account` | 登录 / 退出 |
+| GET | `/api/search?keyword=&source=&page=1` | 搜索；省略 source 聚合各源首页 |
+| GET | `/api/comic/{source}/{comic_id}` | 详情 |
+| GET | `/api/chapter/{source}/{comic_id}/{chapter_id}` | 图片代理列表 |
+| GET | `/api/{source}/{action}` | latest / category / leaderboard / random，按能力开放 |
+| GET | `/api/library` | 书库 |
+| PUT / PATCH / DELETE | `/api/library/{source}/{comic_id}` | 收藏 / 改分类 / 移除 |
+| POST | `/api/library/{source}/{comic_id}/refresh` | 检查更新 |
+| GET / POST | `/api/downloads` | 列表 / 创建下载 |
+| GET / DELETE | `/api/downloads/{task_id}` | 状态 / 删除 |
+| POST | `/api/downloads/{task_id}/cancel` 或 `/retry` | 取消 / 重试 |
+| GET | `/api/downloads/{task_id}/file` | 下载 PDF |
+
+旧 `/api/bika/login` 保留。旧同步 `/api/download/{source}/{comic_id}/{chapter_id}` 会创建任务并等待，不建议用于长连接；请改用任务 API。下载并发和 PDF 密码由服务统一管理，不再接受调用者覆盖。
+
+## 测试
 
 ```bash
-curl -X POST http://localhost:34587/api/bika/login \
-  -H "Content-Type: application/json" \
-  -d '{"account":"邮箱","password":"密码"}'
+pip install pytest httpx
+python -m pytest tests -q
 ```
 
-## Docker 数据持久化
-
-哔咔登录 Token 自动保存在宿主机的 `./data/.bika_token`，账号密码保存在 `./data/.bika_credentials.json`。写入使用原子替换，容器重启或重建后仍可读取。若 Token 因其他设备登录而失效，服务会使用本地凭据自动重新登录并重试原请求一次。
-
-禁漫没有账号登录流程。它的 JWT 由接口动态下发；JWT 返回 401/403 时，服务会清理旧会话并以无 JWT 状态重试一次。
-
-`.bika_credentials.json` 是明文凭据文件，请确保 `./data` 目录权限受控。请勿提交 `.env` 或 `data/` 目录，它们已经包含在 `.gitignore` 和 `.dockerignore` 中。
+测试使用临时数据库和模拟图源，不需要实际账号。`tests.demo_server` 提供离线 WebUI 验证数据，不用于生产部署。
 
 ## License
 

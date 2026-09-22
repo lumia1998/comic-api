@@ -13,6 +13,8 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
+.pytest_cache/
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -27,3 +29,4 @@ skills-lock.json
 
 # Docker data
 data/
+data-preview/

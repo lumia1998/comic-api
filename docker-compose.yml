@@ -11,6 +11,7 @@ services:
       - DATA_DIR=/app/data
       - BIKA_ACCOUNT=${BIKA_ACCOUNT:-}
       - BIKA_PASSWORD=${BIKA_PASSWORD:-}
+      - COPY_API_BASE=${COPY_API_BASE:-https://api.copy3000.com/api/v3}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

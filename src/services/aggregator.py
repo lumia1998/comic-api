@@ -7,22 +7,48 @@ import shutil
 import tempfile
 import time
 import urllib.parse
+import unicodedata
 from difflib import SequenceMatcher
 from typing import List, Dict, Any
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from src.clients import JmClient, BikaClient
+from src.sources import load_sources
+from src.storage import Store
+from src.errors import ComicApiError, DownloadCancelled
 
-
-class ComicApiError(RuntimeError):
-    def __init__(self, message: str, status_code: int = 500):
-        super().__init__(message)
-        self.status_code = status_code
 
 class AggregatorService:
-    def __init__(self):
-        self.jm = JmClient()
-        self.bika = BikaClient()
+    def __init__(self, store=None, sources=None):
+        self.store = store or Store()
+        self.sources = load_sources(self.store) if sources is None else sources
+        self._slots = {key: asyncio.Semaphore(2) for key in self.sources}
+        self._image_slots = asyncio.Semaphore(8)
+
+    def source(self, source):
+        if source not in self.sources:
+            raise ComicApiError("未知图源", 404, "unknown_source", source)
+        return self.sources[source]
+
+    async def call(self, source, method, *args, **kwargs):
+        plugin = self.source(source)
+        operation = getattr(plugin, method, None)
+        if not callable(operation):
+            raise ComicApiError("图源不支持此功能", 400, "unsupported", source)
+        slot = self._slots[source]
+        try:
+            await asyncio.wait_for(slot.acquire(), timeout=10)
+        except asyncio.TimeoutError as exc:
+            raise ComicApiError("图源繁忙，请稍后重试", 429, "busy", source) from exc
+        # Cancellation must not release the permit while the underlying thread is running.
+        task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        task.add_done_callback(lambda completed: (slot.release(), completed.exception() if not completed.cancelled() else None))
+        try:
+            return await asyncio.shield(task)
+        except ComicApiError as exc:
+            exc.source = source
+            raise
+        except Exception as exc:
+            raise ComicApiError("图源响应异常，请稍后重试", 502, "upstream_error", source) from exc
 
     def get_similarity(self, a: str, b: str) -> float:
         """计算两个标题的相似度 (0.0 到 1.0)"""
@@ -30,93 +56,59 @@ class AggregatorService:
         b_clean = b.lower().replace(" ", "").replace("-", "").replace("_", "")
         return SequenceMatcher(None, a_clean, b_clean).ratio()
 
-    async def _async_search(self, client: Any, source_name: str, keyword: str) -> List[Dict[str, Any]]:
-        """异步封装 Client 的阻塞搜索调用"""
-        loop = asyncio.get_running_loop()
-        try:
-            return await loop.run_in_executor(None, client.search, keyword, 1)
-        except Exception as e:
-            print(f"[Aggregator] {source_name} search error: {e}")
-            return []
+    @staticmethod
+    def normalize_title(value):
+        return ''.join(c for c in unicodedata.normalize('NFKC', value).casefold() if c.isalnum())
+
+    def rank_results(self, keyword, items):
+        query = self.normalize_title(keyword)
+        def score(item):
+            title = self.normalize_title(item.get('title', ''))
+            if not query or not title:
+                return (0, 0)
+            tier = 3 if query == title else 2 if query in title else 1
+            return (tier, SequenceMatcher(None, query, title, autojunk=False).ratio())
+        # Stable ties preserve upstream order; identical titles across sources stay selectable.
+        return sorted(items, key=score, reverse=True)
 
     async def aggregate_search(self, keyword: str) -> Dict[str, Any]:
-        """
-        聚合搜索核心：
-        1. 并发查询 jm, bika
-        2. 计算与关键字的相似度
-        3. 优先级为 jm > bika
-        4. 返回最佳匹配以及全渠道结果
-        """
-        tasks = [
-            self._async_search(self.jm, "jm", keyword),
-            self._async_search(self.bika, "bika", keyword)
-        ]
-        
-        jm_res, bika_res = await asyncio.gather(*tasks)
-
-        all_results = {
-            "jm": jm_res,
-            "bika": bika_res
-        }
-
-        candidates = []
-        # 优先级：jm (2) > bika (1)
-        
-        for item in jm_res:
-            sim = self.get_similarity(keyword, item["title"])
-            candidates.append((sim, 2, item))
-            
-        for item in bika_res:
-            sim = self.get_similarity(keyword, item["title"])
-            candidates.append((sim, 1, item))
-
-        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-
-        best_match = None
-        if candidates:
-            best_match = candidates[0][2]
-
-        return {
-            "keyword": keyword,
-            "best_match": best_match,
-            "all_results": all_results
-        }
+        """Search registered sources independently and retain partial failures."""
+        keys = [key for key, plugin in self.sources.items() if "search" in plugin.capabilities]
+        results = await asyncio.gather(*(self.call(key, "search", keyword) for key in keys), return_exceptions=True)
+        all_results, errors, candidates = {}, {}, []
+        for key, result in zip(keys, results):
+            if isinstance(result, Exception):
+                errors[key] = result.payload() if isinstance(result, ComicApiError) else {"message": "图源异常"}
+                all_results[key] = []
+            else:
+                all_results[key] = [dict(item, source=key) for item in result]
+                candidates.extend(all_results[key])
+        candidates = self.rank_results(keyword, candidates)
+        return {"keyword": keyword, "best_match": candidates[0] if candidates else None,
+                "items": candidates, "all_results": all_results, "errors": errors}
         
     async def get_comic_detail(self, source: str, comic_id: str) -> Dict[str, Any]:
         """获取指定渠道下的漫画详情与章节"""
-        loop = asyncio.get_running_loop()
-        client = None
-        if source == "jm":
-            client = self.jm
-        elif source == "bika":
-            client = self.bika
-            
-        if not client:
-            return {}
-            
-        try:
-            return await loop.run_in_executor(None, client.get_comic_detail, comic_id)
-        except Exception as e:
-            print(f"[Aggregator] get_comic_detail error source={source} id={comic_id}: {e}")
-            return {}
+        result = await self.call(source, "detail", comic_id)
+        if not result or not result.get("title"):
+            raise ComicApiError("漫画不存在或图源未返回有效详情", 404, "not_found", source)
+        return dict(result, source=source, id=comic_id)
 
     async def get_chapter_images(self, source: str, comic_id: str, chapter_id: str) -> List[str]:
         """获取指定渠道、漫画和章节下的图片"""
-        loop = asyncio.get_running_loop()
-        client = None
-        if source == "jm":
-            client = self.jm
-        elif source == "bika":
-            client = self.bika
-            
-        if not client:
-            return []
-            
+        return await self.call(source, "pages", comic_id, chapter_id)
+
+    async def image(self, source, url, chapter_id=""):
+        plugin = self.source(source)
         try:
-            return await loop.run_in_executor(None, client.get_chapter_images, comic_id, chapter_id)
-        except Exception as e:
-            print(f"[Aggregator] get_chapter_images error source={source} ch_id={chapter_id}: {e}")
-            return []
+            await asyncio.wait_for(self._image_slots.acquire(), timeout=10)
+        except asyncio.TimeoutError as exc:
+            raise ComicApiError("图片请求繁忙", 429, "busy", source) from exc
+        def process():
+            return plugin.transform_image(self._download_image(plugin.client, url), chapter_id, url)
+        task = asyncio.create_task(asyncio.to_thread(process))
+        task.add_done_callback(lambda done: (self._image_slots.release(), done.exception() if not done.cancelled() else None))
+        return await asyncio.shield(task)
 
     def _download_image(self, client: Any, url: str, retries: int = 3) -> bytes:
         """使用 Client 自身的 BaseClient.request 来下载图片二进制。
@@ -138,9 +130,10 @@ class AggregatorService:
                 res = client.request("GET", url, headers=headers, timeout=30)
                 if res.status_code == 200 and res.content:
                     return res.content
-                last_err = Exception(
-                    f"Failed to download image from {url}: status={res.status_code}"
-                )
+                status = res.status_code
+                last_err = ComicApiError(f"图片下载失败 (HTTP {status})", status if status in (401,403,404,429) else 502, "image_download_failed")
+                if status in (401,403,404):
+                    break
             except Exception as e:
                 last_err = e
 
@@ -197,11 +190,18 @@ class AggregatorService:
             fixed.save(output, format=img.format or "JPEG")
             return output.getvalue()
 
-    def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, source: str = "", chapter_id: str = "", concurrency: int = 4) -> List[str]:
+    def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, source: str = "", chapter_id: str = "", concurrency: int = 4, progress=None, cancelled=None) -> List[str]:
         results = {}
+        def download(url):
+            if cancelled and cancelled():
+                raise DownloadCancelled()
+            data = self._download_image(client, url)
+            if cancelled and cancelled():
+                raise DownloadCancelled()
+            return self.source(source).transform_image(data, chapter_id, url)
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
             futures = {
-                pool.submit(self._download_image, client, url): idx
+                pool.submit(download, url): idx
                 for idx, url in enumerate(urls)
             }
             for fut in as_completed(futures):
@@ -209,12 +209,8 @@ class AggregatorService:
                 try:
                     data = fut.result()
                     
-                    # Apply JmComic descrambling if source is jm
-                    if source == "jm" and chapter_id:
-                        try:
-                            data = self._descramble_jm_image(data, chapter_id, urls[idx])
-                        except Exception as e:
-                            print(f"[comic-api] JmComic descramble error: {e}")
+                    if cancelled and cancelled():
+                        raise DownloadCancelled()
                     
                     # Determine extension from url or fallback to .jpg
                     path_str = urllib.parse.urlparse(urls[idx]).path.lower()
@@ -227,8 +223,16 @@ class AggregatorService:
                     with open(p, "wb") as f:
                         f.write(data)
                     results[idx] = p
+                    if progress:
+                        progress("downloading", len(results), len(urls))
+                except DownloadCancelled:
+                    for pending in futures:
+                        pending.cancel()
+                    raise
                 except Exception as e:
-                    raise Exception(f"图片 {idx+1} 下载失败: {e}")
+                    for pending in futures:
+                        pending.cancel()
+                    raise ComicApiError(f"图片 {idx+1} 下载失败", 502, "image_download_failed", source) from e
         if len(results) != len(urls):
             raise Exception("部分图片下载失败")
         return [results[i] for i in sorted(results)]
@@ -320,22 +324,18 @@ class AggregatorService:
                 except Exception:
                     pass
 
-    async def download_chapter_pdf(self, source: str, comic_id: str, chapter_id: str, concurrency: int = 4, password: str = "") -> str:
+    async def download_chapter_pdf(self, source: str, comic_id: str, chapter_id: str, concurrency: int = 4, password: str = "", progress=None, cancelled=None) -> str:
         """下载章节并打包成自适应压缩的 PDF，返回本地临时 PDF 路径"""
-        client = None
-        if source == "jm":
-            client = self.jm
-        elif source == "bika":
-            client = self.bika
-        if not client:
-            raise ComicApiError(f"Invalid source: {source}", status_code=400)
-        if source == "bika" and not getattr(self.bika, "authorization", ""):
-            raise ComicApiError("哔咔功能需要先在 comic-api 后台绑定账号", status_code=401)
+        client = self.source(source).client
 
         # Fetch chapter images first
         image_urls = await self.get_chapter_images(source, comic_id, chapter_id)
         if not image_urls:
             raise ComicApiError("该章节没有图片，或平台限制访问", status_code=404)
+        if cancelled and cancelled():
+            raise DownloadCancelled()
+        if progress:
+            progress("downloading", 0, len(image_urls))
 
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix="comic_api_dl_")
@@ -344,7 +344,7 @@ class AggregatorService:
             loop = asyncio.get_running_loop()
             worker_count = max(1, min(int(concurrency), 16))
             all_paths = await loop.run_in_executor(
-                None, self._download_images_parallel, client, image_urls, temp_dir, source, chapter_id, worker_count
+                None, self._download_images_parallel, client, image_urls, temp_dir, source, chapter_id, worker_count, progress, cancelled
             )
 
             # Package and dynamically compress to PDF
@@ -354,12 +354,18 @@ class AggregatorService:
 
             try:
                 total = len(all_paths)
+                if cancelled and cancelled():
+                    raise DownloadCancelled()
+                if progress:
+                    progress("packaging", total, total)
                 limit_bytes = 10 * math.ceil(total / 50) * 1024 * 1024
 
                 await loop.run_in_executor(
                     None, self._create_compressed_pdf, all_paths, pdf_path, limit_bytes
                 )
                 await loop.run_in_executor(None, self._encrypt_pdf, pdf_path, password)
+                if cancelled and cancelled():
+                    raise DownloadCancelled()
                 encrypted_size = os.path.getsize(pdf_path)
                 if encrypted_size > limit_bytes:
                     print(

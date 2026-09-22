@@ -1,228 +1,228 @@
-import hashlib
-import os
 import asyncio
-import urllib.parse
-from fastapi import FastAPI, Request, Query, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse, Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+import io
+from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.parse import urlencode, urlparse
+
 from dotenv import load_dotenv
-from src.services.aggregator import AggregatorService, ComicApiError
+from fastapi import FastAPI, Query
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from PIL import Image
+from pydantic import BaseModel, Field
+
+from src.errors import ComicApiError
+from src.services.aggregator import AggregatorService
+from src.services.downloads import DownloadManager, pdf_password_for
+from src.storage import Store
 
 load_dotenv()
+ROOT = Path(__file__).resolve().parent
 
-app = FastAPI(
-    title="Aggregated Comic API",
-    description="Multisource aggregate manga lookup engine (JM, Bika)",
-    version="1.0.0"
-)
 
-os.makedirs("src/web/static", exist_ok=True)
-os.makedirs("src/web/templates", exist_ok=True)
+class BookInput(BaseModel):
+    category: str = Field(default="", max_length=100)
 
-app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
-templates = Jinja2Templates(directory="src/web/templates")
 
-aggregator = AggregatorService()
+class TaskInput(BaseModel):
+    source: str = Field(min_length=1, max_length=64)
+    comic_id: str = Field(min_length=1, max_length=200)
+    chapter_id: str = Field(min_length=1, max_length=200)
+    title: str = Field(default="", max_length=500)
+    chapter: str = Field(default="", max_length=500)
 
-def pdf_password_for(source: str, comic_id: str, chapter_id: str) -> str:
-    seed = f"{source.strip().lower()}:{comic_id}:{chapter_id}".encode("utf-8")
-    value = int(hashlib.sha256(seed).hexdigest()[:12], 16) % 1000000
-    return f"{value:06d}"
 
-@app.get("/health")
-async def health_check():
-    """健康检查端点"""
-    return {"status": "ok"}
+def create_app(store=None, sources=None):
+    store = store or Store()
+    service = AggregatorService(store, sources)
+    downloads = DownloadManager(store, service)
 
-@app.get("/", response_class=HTMLResponse)
-async def home_index(request: Request):
-    """前端首页"""
-    bika_authed = bool(aggregator.bika.authorization)
-    return templates.TemplateResponse(request, "index.html", {"bika_authed": bika_authed})
+    @asynccontextmanager
+    async def lifespan(app):
+        await downloads.start()
+        yield
+        await downloads.stop()
 
-@app.get("/api/search")
-async def api_search(keyword: str = Query(..., min_length=1)):
-    """聚合搜索接口"""
-    results = await aggregator.aggregate_search(keyword)
-    return results
+    app = FastAPI(title="Comic · 图源与书库", version="2.0.0", lifespan=lifespan)
+    app.state.store, app.state.service, app.state.downloads = store, service, downloads
+    app.mount("/static", StaticFiles(directory=ROOT / "src/web/static"), name="static")
 
-@app.get("/api/comic/{source}/{comic_id}")
-async def api_comic_detail(source: str, comic_id: str):
-    """漫画详情 (章节列表)"""
-    detail = await aggregator.get_comic_detail(source, comic_id)
-    return detail
+    @app.exception_handler(ComicApiError)
+    async def source_error(request, exc):
+        return JSONResponse({"error": exc.payload()}, status_code=exc.status_code)
 
-@app.get("/api/image/proxy")
-async def api_image_proxy(url: str, source: str, chapter_id: str = ""):
-    """图片代理与去混淆"""
-    try:
-        loop = asyncio.get_running_loop()
-        client = None
-        if source == "jm":
-            client = aggregator.jm
-        elif source == "bika":
-            client = aggregator.bika
-        else:
-            raise HTTPException(status_code=400, detail="Invalid source")
+    @app.exception_handler(RequestValidationError)
+    async def invalid_input(request, exc):
+        return JSONResponse({"error": {"code": "invalid_request", "message": "请求参数无效"}}, status_code=422)
 
-        # 下载原始图片数据
-        data = await loop.run_in_executor(None, aggregator._download_image, client, url)
+    @app.exception_handler(Exception)
+    async def internal_error(request, exc):
+        import logging
+        logging.getLogger(__name__).exception("Request failed: %s", request.url.path)
+        return JSONResponse({"error": {"code": "internal_error", "message": "服务内部错误"}}, status_code=500)
 
-        # 禁漫天堂图片去混淆还原
-        if source == "jm" and chapter_id:
-            try:
-                data = await loop.run_in_executor(None, aggregator._descramble_jm_image, data, chapter_id, url)
-            except Exception as e:
-                print(f"[Proxy] JMComic descramble error: {e}")
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
 
-        # 判断 Content-Type
-        content_type = "image/jpeg"
-        url_lower = url.lower()
-        if ".png" in url_lower:
-            content_type = "image/png"
-        elif ".webp" in url_lower:
-            content_type = "image/webp"
-        elif ".gif" in url_lower:
-            content_type = "image/gif"
+    @app.get("/")
+    async def home():
+        return FileResponse(ROOT / "src/web/templates/index.html", media_type="text/html")
 
-        return Response(content=data, media_type=content_type)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    @app.get("/api/sources")
+    async def sources_list():
+        return {"sources": [plugin.manifest() for plugin in service.sources.values()]}
 
-@app.get("/api/chapter/{source}/{comic_id}/{chapter_id}")
-async def api_chapter_images(source: str, comic_id: str, chapter_id: str):
-    """章节图片"""
-    images = await aggregator.get_chapter_images(source, comic_id, chapter_id)
-    proxied_images = [
-        f"/api/image/proxy?url={urllib.parse.quote(url)}&source={source}&chapter_id={chapter_id}"
-        for url in images
-    ]
-    return {"images": proxied_images}
+    @app.post("/api/sources/{source}/login")
+    @app.post("/api/{source}/login", include_in_schema=False)
+    async def login(source: str, values: dict[str, str]):
+        plugin = service.source(source)
+        if "login" not in plugin.capabilities:
+            raise ComicApiError("该图源不提供登录", 400, "unsupported", source)
+        if any(not values.get(field["name"], "").strip() for field in plugin.login_fields):
+            raise ComicApiError("请填写全部登录字段", 422, "invalid_request", source)
+        await service.call(source, "login", values)
+        return {"success": True, "account": plugin.account_status()}
 
-@app.post("/api/bika/login")
-async def api_bika_login(data: dict):
-    """哔咔登录接口"""
-    account = data.get("account", "").strip()
-    password = data.get("password", "")
-    if not account or not password:
-        return {"success": False, "error": "账号和密码不能为空"}
-        
-    try:
-        token = aggregator.bika.login(account, password)
-        return {"success": True, "authenticated": bool(token), "token": token}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    @app.put("/api/sources/{source}/settings")
+    async def save_source_settings(source: str, values: dict[str, str]):
+        plugin = service.source(source)
+        if not plugin.settings_fields:
+            raise ComicApiError("该图源暂无可修改的服务器设置", 400, "unsupported", source)
+        # Serialize updates on the event loop. Existing requests retain their adapter.
+        service.sources[source] = plugin.save_settings(values)
+        return {"success": True, "source": service.source(source).manifest()}
 
-@app.get("/api/download/{source}/{comic_id}/{chapter_id}")
-async def api_download_chapter(
-    source: str,
-    comic_id: str,
-    chapter_id: str,
-    background_tasks: BackgroundTasks,
-    title: str = Query(""),
-    chapter: str = Query(""),
-    password: str = Query(""),
-    concurrency: int = Query(4, ge=1, le=16)
-):
-    """下载章节并打包成自适应压缩的 PDF"""
-    try:
-        pdf_password = password or pdf_password_for(source, comic_id, chapter_id)
-        pdf_path = await aggregator.download_chapter_pdf(
-            source,
-            comic_id,
-            chapter_id,
-            concurrency=concurrency,
-            password=pdf_password,
-        )
-        
-        filename = f"{pdf_password}.pdf"
+    @app.delete("/api/sources/{source}/account")
+    async def logout(source: str):
+        if "login" not in service.source(source).capabilities:
+            raise ComicApiError("该图源不提供登录", 400, "unsupported", source)
+        await service.call(source, "logout")
+        return {"success": True}
 
-        # Register background task to clean up the temporary PDF file
-        def remove_temp_file(path: str):
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except Exception as e:
-                print(f"[comic-api] Error removing temp file {path}: {e}")
+    @app.get("/api/search")
+    async def search(keyword: str = Query(min_length=1, max_length=200), source: str = "", page: int = Query(1, ge=1, le=1000)):
+        if source:
+            result = await service.call(source, "search", keyword, page)
+            items = service.rank_results(keyword, [dict(item, source=source) for item in result])
+            return {"items": items, "all_results": {source: items}, "errors": {}}
+        return await service.aggregate_search(keyword)
 
-        background_tasks.add_task(remove_temp_file, pdf_path)
+    @app.get("/api/comic/{source}/{comic_id}")
+    async def detail(source: str, comic_id: str):
+        return await service.get_comic_detail(source, comic_id)
 
-        return FileResponse(
-            path=pdf_path,
-            filename=filename,
-            media_type="application/pdf"
-        )
-    except ComicApiError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    @app.get("/api/chapter/{source}/{comic_id}/{chapter_id}")
+    async def chapter(source: str, comic_id: str, chapter_id: str):
+        urls = await service.get_chapter_images(source, comic_id, chapter_id)
+        return {"images": ["/api/image/proxy?" + urlencode({"source": source, "url": url, "chapter_id": chapter_id}) for url in urls]}
 
-# ==================== 新增高阶玩法的 API 路由 ====================
+    @app.get("/api/image/proxy")
+    async def image(source: str, url: str, chapter_id: str = ""):
+        if urlparse(url).scheme not in ("http", "https"):
+            raise ComicApiError("图片地址无效", 400, "invalid_request")
+        data = await service.image(source, url, chapter_id)
+        try:
+            with Image.open(io.BytesIO(data)) as img:
+                media_type = Image.MIME.get(img.format, "image/jpeg")
+        except Exception as exc:
+            raise ComicApiError("图源未返回有效图片", 502, "invalid_image", source) from exc
+        return Response(data, media_type=media_type)
 
-@app.get("/api/{source}/random")
-async def api_random(source: str):
-    """
-    随机本子/推荐接口
-    http://127.0.0.1:8699/api/bika/random
-    http://127.0.0.1:8699/api/jm/random (使用推荐替代)
-    """
-    if source == "bika":
-        return {"success": True, "source": "bika", "data": aggregator.bika.get_random()}
-    elif source == "jm":
-        return {"success": True, "source": "jm", "data": aggregator.jm.get_recommend()}
-    return {"success": False, "error": "Invalid source"}
+    @app.get("/api/library")
+    async def library(category: str | None = None):
+        all_books = store.books()
+        return {"items": all_books if category is None else [item for item in all_books if item["library_category"] == category],
+                "categories": sorted({item["library_category"] for item in all_books if item["library_category"]})}
 
-@app.get("/api/{source}/leaderboard")
-async def api_leaderboard(source: str, mode: str = "day", page: int = 1):
-    """
-    排行榜接口
-    - source: jm / bika
-    - mode: day (日榜), week (周榜), month (月榜), total (总榜，仅限 jm)
-    http://127.0.0.1:8699/api/jm/leaderboard?mode=week
-    """
-    if source == "bika":
-        data = aggregator.bika.get_leaderboard(mode)
-        # 客户端侧分页 (每页 20 条结果)
-        page_size = 20
-        start = (page - 1) * page_size
-        end = start + page_size
-        sliced_data = data[start:end] if start < len(data) else []
-        return {"success": True, "source": "bika", "data": sliced_data}
-    elif source == "jm":
-        return {"success": True, "source": "jm", "data": aggregator.jm.get_leaderboard(mode, page)}
-    return {"success": False, "error": "Invalid source"}
+    @app.put("/api/library/{source}/{comic_id}")
+    async def save_book(source: str, comic_id: str, data: BookInput):
+        metadata = await service.get_comic_detail(source, comic_id)
+        store.save_book(source, comic_id, metadata, data.category)
+        return {"success": True}
 
-@app.get("/api/{source}/latest")
-async def api_latest(source: str, page: int = 1, sort: str = "dd"):
-    """
-    最近更新接口 (哔咔支持排序)
-    sort: dd=最新上架, da=最旧上架, ld=最多喜欢, vd=最多观看
-    http://127.0.0.1:8699/api/jm/latest?page=1
-    http://127.0.0.1:8699/api/bika/latest?page=1&sort=ld
-    """
-    if source == "bika":
-        return {"success": True, "source": "bika", "data": aggregator.bika.get_latest(page, sort)}
-    elif source == "jm":
-        return {"success": True, "source": "jm", "data": aggregator.jm.get_latest(page)}
-    return {"success": False, "error": "Invalid source"}
+    @app.patch("/api/library/{source}/{comic_id}")
+    async def categorize(source: str, comic_id: str, data: BookInput):
+        with store.connect() as db:
+            result = db.execute("UPDATE library SET category=? WHERE source=? AND comic_id=?", (data.category, source, comic_id))
+            if not result.rowcount:
+                raise ComicApiError("未收藏该漫画", 404, "not_found")
+        return {"success": True}
 
-@app.get("/api/{source}/category")
-async def api_category(source: str, name: str, page: int = 1, sort: str = "dd"):
-    """
-    分类筛选接口 (两平台均支持排序)
-    - name: 哔咔分类(例如 '嗶咔漢化', '同人') / 禁漫分类(例如 'doujin', 'single')
-    - sort 通用值: dd=最新, ld=最多喜欢/收藏, vd=最多观看, da=最旧(仅bika)
-    - sort 禁漫专属值: new=最新, mv=最多观看, tf=最多收藏, mp=最多指名
-    http://127.0.0.1:8699/api/bika/category?name=同人&sort=ld
-    http://127.0.0.1:8699/api/jm/category?name=doujin&sort=mv
-    """
-    if source == "bika":
-        return {"success": True, "source": "bika", "data": aggregator.bika.get_category_comics(name, page, sort)}
-    elif source == "jm":
-        return {"success": True, "source": "jm", "data": aggregator.jm.get_category_comics(name, page, sort)}
-    return {"success": False, "error": "Invalid source"}
+    @app.post("/api/library/{source}/{comic_id}/refresh")
+    async def refresh(source: str, comic_id: str):
+        books = [book for book in store.books() if book["source"] == source and book["id"] == comic_id]
+        if not books:
+            raise ComicApiError("未收藏该漫画", 404, "not_found")
+        metadata = await service.get_comic_detail(source, comic_id)
+        old_ids = {str(item["id"]) for item in books[0].get("chapters", [])}
+        new_ids = {str(item["id"]) for item in metadata.get("chapters", [])}
+        store.save_book(source, comic_id, metadata, books[0]["library_category"])
+        return {"success": True, "new_chapters": len(new_ids - old_ids)}
+
+    @app.delete("/api/library/{source}/{comic_id}")
+    async def remove_book(source: str, comic_id: str):
+        store.remove_book(source, comic_id)
+        return {"success": True}
+
+    @app.get("/api/downloads")
+    async def task_list():
+        return {"tasks": store.tasks()}
+
+    @app.post("/api/downloads", status_code=202)
+    async def create_download(data: TaskInput):
+        return downloads.create(**data.model_dump())
+
+    @app.get("/api/downloads/{task_id}")
+    async def download_status(task_id: str):
+        return downloads.require(task_id)
+
+    @app.post("/api/downloads/{task_id}/cancel")
+    async def cancel_download(task_id: str):
+        return downloads.cancel(task_id)
+
+    @app.post("/api/downloads/{task_id}/retry")
+    async def retry_download(task_id: str):
+        return downloads.retry(task_id)
+
+    @app.delete("/api/downloads/{task_id}")
+    async def delete_download(task_id: str):
+        downloads.delete(task_id)
+        return {"success": True}
+
+    @app.get("/api/downloads/{task_id}/file")
+    async def download_file(task_id: str):
+        task = downloads.require(task_id)
+        path = downloads.file_path(task_id)
+        if task["status"] != "completed" or not path.is_file():
+            raise ComicApiError("文件尚未生成或已被清理", 404, "file_not_ready")
+        return FileResponse(path, filename=f"{task['password']}.pdf", media_type="application/pdf")
+
+    @app.get("/api/download/{source}/{comic_id}/{chapter_id}")
+    async def legacy_download(source: str, comic_id: str, chapter_id: str, title: str = "", chapter: str = ""):
+        task = downloads.create(source, comic_id, chapter_id, title, chapter)
+        while True:
+            current = downloads.require(task["id"])
+            if current["status"] == "completed":
+                return await download_file(task["id"])
+            if current["status"] in ("failed", "cancelled"):
+                raise ComicApiError(current["error"] or "任务已取消", 502, "download_failed", source)
+            await asyncio.sleep(0.5)
+
+    @app.get("/api/{source}/{action}")
+    async def browse(source: str, action: str, page: int = Query(1, ge=1, le=1000), sort: str = "", mode: str = "day", name: str = ""):
+        plugin = service.source(source)
+        if action not in {"latest", "category", "leaderboard", "random"} or action not in plugin.capabilities:
+            raise ComicApiError("图源不支持此功能", 400, "unsupported", source)
+        items = await service.call(source, "browse", action, page=page, sort=sort, mode=mode, name=name)
+        return {"success": True, "source": source, "data": [dict(item, source=source) for item in items]}
+
+    return app
+
+
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8699, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8699)

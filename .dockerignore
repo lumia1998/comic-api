@@ -12,3 +12,4 @@ data/
 skills-lock.json
 tests/
 test_*.py
+data-preview/

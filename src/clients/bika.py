@@ -11,13 +11,16 @@ from typing import List, Dict, Any
 from urllib.parse import urlparse, urlencode
 from src.config import Config
 from src.clients.base import BaseClient
+from src.errors import ComicApiError
 
 class BikaClient(BaseClient):
-    def __init__(self):
+    def __init__(self, store=None):
         super().__init__()
         self.api_base = Config.BIKA_DEFAULT_API_BASE
         self._auth_lock = threading.RLock()
         self.authorization = ""
+        from src.storage import Store
+        self.store = store or Store()
         data_dir = os.environ.get("DATA_DIR", "")
         if data_dir:
             self.token_file = os.path.join(data_dir, ".bika_token")
@@ -25,79 +28,44 @@ class BikaClient(BaseClient):
             self.token_file = str(Path(__file__).resolve().parents[2] / ".bika_token")
         self.credentials_file = os.path.join(os.path.dirname(self.token_file), ".bika_credentials.json")
 
+        # Import once. An empty SQL record after logout must not resurrect legacy files.
+        if self.store.account("bika") is None:
+            legacy = {}
+            if os.path.exists(self.credentials_file):
+                with open(self.credentials_file, encoding="utf-8") as stream:
+                    legacy.update(json.load(stream))
+            if os.path.exists(self.token_file):
+                legacy["token"] = Path(self.token_file).read_text().strip()
+            legacy.setdefault("account", os.environ.get("BIKA_ACCOUNT", "").strip())
+            legacy.setdefault("password", os.environ.get("BIKA_PASSWORD", ""))
+            self.store.save_account("bika", legacy)
+
         stored_account, stored_password = self._read_persisted_credentials()
-        if stored_account and stored_password:
-            self._account = stored_account
-            self._password = stored_password
-        else:
-            self._account = os.environ.get("BIKA_ACCOUNT", "").strip()
-            self._password = os.environ.get("BIKA_PASSWORD", "")
+        self._account, self._password = stored_account, stored_password
 
         self.authorization = self._read_persisted_token()
 
     def _read_persisted_credentials(self):
-        try:
-            if os.path.exists(self.credentials_file):
-                with open(self.credentials_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                account = str(data.get("account", "")).strip()
-                password = str(data.get("password", ""))
-                if account and password:
-                    return account, password
-        except Exception as e:
-            print(f"[BikaClient] Load credentials error: {e}")
-        return "", ""
+        data = self.store.account("bika") or {}
+        return data.get("account", ""), data.get("password", "")
 
     def _read_persisted_token(self) -> str:
-        try:
-            if os.path.exists(self.token_file):
-                with open(self.token_file, "r", encoding="utf-8") as f:
-                    return f.read().strip()
-        except Exception as e:
-            print(f"[BikaClient] Load token error: {e}")
-        return ""
-
-    def _atomic_write(self, file_path: str, content: str) -> None:
-        token_dir = os.path.dirname(file_path) or "."
-        os.makedirs(token_dir, exist_ok=True)
-        temp_file = f"{file_path}.{os.getpid()}.{threading.get_ident()}.tmp"
-        try:
-            with open(temp_file, "w", encoding="utf-8") as f:
-                f.write(content)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_file, file_path)
-        finally:
-            if os.path.exists(temp_file):
-                try:
-                    os.remove(temp_file)
-                except OSError:
-                    pass
+        return (self.store.account("bika") or {}).get("token", "")
 
     def _persist_token(self, token: str) -> None:
-        self._atomic_write(self.token_file, token)
+        data = self.store.account("bika") or {}
+        self.store.save_account("bika", dict(data, token=token))
 
     def _persist_credentials(self, account: str, password: str) -> None:
-        credentials = json.dumps(
-            {"account": account, "password": password},
-            ensure_ascii=False,
-        )
-        self._atomic_write(self.credentials_file, credentials)
+        data = self.store.account("bika") or {}
+        self.store.save_account("bika", dict(data, account=account, password=password))
 
     def _clear_authorization_locked(self, expected_token: str = "") -> None:
         if expected_token and self.authorization not in ("", expected_token):
             return
 
         self.authorization = ""
-        if not os.path.exists(self.token_file):
-            return
-
-        try:
-            persisted_token = self._read_persisted_token()
-            if not expected_token or persisted_token == expected_token:
-                os.remove(self.token_file)
-        except Exception as e:
-            print(f"[BikaClient] Remove token error: {e}")
+        self._persist_token("")
 
     def _credentials_available(self) -> bool:
         return bool(self._account and self._password)
@@ -116,7 +84,8 @@ class BikaClient(BaseClient):
                 return
 
             if not self._credentials_available():
-                raise Exception("哔咔未登录，请在 .env 配置账号密码或在后台绑定账号。")
+                from src.errors import ComicApiError
+                raise ComicApiError("请先绑定图源账号", 401, "login_required", "bika")
 
             self._login_locked(self._account, self._password)
 
@@ -216,14 +185,13 @@ class BikaClient(BaseClient):
         )
         if res.status_code < 200 or res.status_code >= 300:
             err_msg = self._response_error(res)
-            raise Exception(f"Bika request failed status={res.status_code} error={err_msg}")
+            raise ComicApiError("图源登录失败，请检查账号或稍后重试", 401 if res.status_code in (400, 401) else 502, "login_failed", "bika")
 
         token = res.json().get("data", {}).get("token", "")
         if not token:
-            raise Exception("哔咔登录成功但响应中没有 Token。")
+            raise ComicApiError("登录响应缺少 Token", 502, "invalid_response", "bika")
 
-        self._persist_credentials(account, password)
-        self._persist_token(token)
+        self.store.save_account("bika", {"account": account, "password": password, "token": token})
         self._account = account
         self._password = password
         self.authorization = token
@@ -241,7 +209,7 @@ class BikaClient(BaseClient):
 
             if not self._credentials_available():
                 self._clear_authorization_locked(failed_token)
-                raise Exception("哔咔登录已失效，且未配置 BIKA_ACCOUNT/BIKA_PASSWORD。")
+                raise ComicApiError("登录已失效，请重新绑定图源账号", 401, "login_required", "bika")
 
             try:
                 self._login_locked(self._account, self._password)
@@ -270,7 +238,7 @@ class BikaClient(BaseClient):
                     with self._auth_lock:
                         self._clear_authorization_locked(used_token)
 
-            raise Exception(f"Bika request failed status={res.status_code} error={err_msg}")
+            raise ComicApiError(f"图源返回 HTTP {res.status_code}", res.status_code if res.status_code in (401,403,404,429) else 502, "login_required" if res.status_code == 401 else "upstream_error", "bika")
 
         return res.json()
 
@@ -323,7 +291,7 @@ class BikaClient(BaseClient):
             return results
         except Exception as e:
             print(f"[BikaClient] search error: {e}")
-            return []
+            raise
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
         """获取详情并加载全部章节分页"""
@@ -349,7 +317,7 @@ class BikaClient(BaseClient):
                     eps_res = self.bika_request(f"comics/{comic_id}/eps", method="GET", params={"page": str(page)})
                     eps_docs.extend(eps_res.get("data", {}).get("eps", {}).get("docs", []))
                 except Exception:
-                    break
+                    raise
             
             chapters = []
             for idx, doc in enumerate(eps_docs):
@@ -376,7 +344,7 @@ class BikaClient(BaseClient):
             }
         except Exception as e:
             print(f"[BikaClient] get_comic_detail error: {e}")
-            return {}
+            raise
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
         """获取章节页面图片"""
@@ -406,7 +374,7 @@ class BikaClient(BaseClient):
             return image_urls
         except Exception as e:
             print(f"[BikaClient] get_chapter_images error: {e}")
-            return []
+            raise
 
     def _parse_comics_list(self, raw_res: dict) -> List[Dict[str, Any]]:
         """内部辅助解析哔咔返回的漫画数组"""
@@ -443,7 +411,7 @@ class BikaClient(BaseClient):
             return self._parse_comics_list(res)
         except Exception as e:
             print(f"[BikaClient] get_random error: {e}")
-            return []
+            raise
 
     def get_leaderboard(self, mode: str = "day") -> List[Dict[str, Any]]:
         """获取排行榜 (day/week/month)"""
@@ -455,7 +423,7 @@ class BikaClient(BaseClient):
             return self._parse_comics_list(res)
         except Exception as e:
             print(f"[BikaClient] get_leaderboard error: {e}")
-            return []
+            raise
 
     def get_category_comics(self, category_name: str, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
         """
@@ -470,7 +438,7 @@ class BikaClient(BaseClient):
             return self._parse_comics_list(res)
         except Exception as e:
             print(f"[BikaClient] get_category_comics error: {e}")
-            return []
+            raise
 
     def get_latest(self, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
         """
@@ -485,4 +453,4 @@ class BikaClient(BaseClient):
             return self._parse_comics_list(res)
         except Exception as e:
             print(f"[BikaClient] get_latest error: {e}")
-            return []
+            raise

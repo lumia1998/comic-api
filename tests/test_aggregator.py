@@ -1,17 +1,11 @@
 import asyncio
 import hashlib
 import io
-import sys
 import types
 
 import pytest
 from PIL import Image
 
-
-clients = types.ModuleType("src.clients")
-clients.JmClient = lambda: object()
-clients.BikaClient = lambda: object()
-sys.modules.setdefault("src.clients", clients)
 
 from src.services.aggregator import AggregatorService
 from src.services.aggregator import ComicApiError
@@ -121,32 +115,32 @@ def test_create_compressed_pdf_uses_scale_fallback_until_under_limit(monkeypatch
     assert (85, 0.85) in attempts
 
 
-def test_download_rejects_invalid_source_with_400():
+def test_download_rejects_invalid_source_with_404():
     service = AggregatorService.__new__(AggregatorService)
-    service.jm = object()
-    service.bika = object()
+    service.sources = {}
 
     with pytest.raises(ComicApiError) as error:
         asyncio.run(service.download_chapter_pdf("bad", "1", "1"))
 
-    assert error.value.status_code == 400
+    assert error.value.status_code == 404
 
 
-def test_download_rejects_bika_without_login_with_401():
+def test_download_propagates_plugin_login_error(monkeypatch):
     service = AggregatorService.__new__(AggregatorService)
-    service.jm = object()
-    service.bika = types.SimpleNamespace(authorization="")
+    service.sources = {"account_source": types.SimpleNamespace(client=object())}
+    async def pages(*args):
+        raise ComicApiError("login required", 401, "login_required")
+    monkeypatch.setattr(service, "get_chapter_images", pages)
 
     with pytest.raises(ComicApiError) as error:
-        asyncio.run(service.download_chapter_pdf("bika", "comic", "1"))
+        asyncio.run(service.download_chapter_pdf("account_source", "comic", "1"))
 
     assert error.value.status_code == 401
 
 
 def test_download_rejects_empty_chapter_images_with_404(monkeypatch):
     service = AggregatorService.__new__(AggregatorService)
-    service.jm = object()
-    service.bika = object()
+    service.sources = {"jm": types.SimpleNamespace(client=object())}
 
     async def fake_images(_source, _comic_id, _chapter_id):
         return []
