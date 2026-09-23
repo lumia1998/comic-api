@@ -43,6 +43,12 @@ class DownloadManager:
 
     def create(self, source, comic_id, chapter_id, title="", chapter=""):
         self.service.source(source)
+        with self.store.connect() as db:
+            existing = db.execute(
+                "SELECT id FROM downloads WHERE source=? AND comic_id=? AND chapter_id=? AND status IN ('queued','running','cancelling')",
+                (source, comic_id, chapter_id)).fetchone()
+        if existing:
+            return self.require(existing["id"])
         if self.queue.full():
             raise ComicApiError("下载队列已满", 429, "busy")
         task_id = uuid.uuid4().hex

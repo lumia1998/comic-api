@@ -105,6 +105,11 @@ class Store:
                 category=excluded.category, updated_at=CURRENT_TIMESTAMP""",
                        (source, comic_id, json.dumps(metadata, ensure_ascii=False), category))
 
+    def set_category(self, source, comic_id, category):
+        with self.connect() as db:
+            return db.execute("UPDATE library SET category=? WHERE source=? AND comic_id=?",
+                              (category, source, comic_id)).rowcount
+
     def remove_book(self, source, comic_id):
         with self.connect() as db:
             db.execute("DELETE FROM library WHERE source=? AND comic_id=?", (source, comic_id))

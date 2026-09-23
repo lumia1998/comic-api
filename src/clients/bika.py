@@ -1,5 +1,6 @@
 import time
 import os
+import logging
 from pathlib import Path
 import uuid
 import hmac
@@ -12,6 +13,8 @@ from urllib.parse import urlparse, urlencode
 from src.config import Config
 from src.clients.base import BaseClient
 from src.errors import ComicApiError
+
+log = logging.getLogger("comic.bika")
 
 class BikaClient(BaseClient):
     def __init__(self, store=None):
@@ -290,7 +293,7 @@ class BikaClient(BaseClient):
                 })
             return results
         except Exception as e:
-            print(f"[BikaClient] search error: {e}")
+            log.warning("search error", exc_info=True)
             raise
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
@@ -343,7 +346,7 @@ class BikaClient(BaseClient):
                 "source": "bika"
             }
         except Exception as e:
-            print(f"[BikaClient] get_comic_detail error: {e}")
+            log.warning("get_comic_detail error", exc_info=True)
             raise
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
@@ -373,7 +376,7 @@ class BikaClient(BaseClient):
                 
             return image_urls
         except Exception as e:
-            print(f"[BikaClient] get_chapter_images error: {e}")
+            log.warning("get_chapter_images error", exc_info=True)
             raise
 
     def _parse_comics_list(self, raw_res: dict) -> List[Dict[str, Any]]:
@@ -410,7 +413,7 @@ class BikaClient(BaseClient):
             res = self.bika_request("comics/random", method="GET")
             return self._parse_comics_list(res)
         except Exception as e:
-            print(f"[BikaClient] get_random error: {e}")
+            log.warning("get_random error", exc_info=True)
             raise
 
     def get_leaderboard(self, mode: str = "day") -> List[Dict[str, Any]]:
@@ -422,7 +425,7 @@ class BikaClient(BaseClient):
             res = self.bika_request("comics/leaderboard", method="GET", params={"tt": days, "ct": "VC"})
             return self._parse_comics_list(res)
         except Exception as e:
-            print(f"[BikaClient] get_leaderboard error: {e}")
+            log.warning("get_leaderboard error", exc_info=True)
             raise
 
     def get_category_comics(self, category_name: str, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
@@ -437,7 +440,7 @@ class BikaClient(BaseClient):
             res = self.bika_request("comics", method="GET", params={"page": str(page), "c": category_name, "s": s})
             return self._parse_comics_list(res)
         except Exception as e:
-            print(f"[BikaClient] get_category_comics error: {e}")
+            log.warning("get_category_comics error", exc_info=True)
             raise
 
     def get_latest(self, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
@@ -452,5 +455,5 @@ class BikaClient(BaseClient):
             res = self.bika_request("comics", method="GET", params={"page": str(page), "s": s})
             return self._parse_comics_list(res)
         except Exception as e:
-            print(f"[BikaClient] get_latest error: {e}")
+            log.warning("get_latest error", exc_info=True)
             raise

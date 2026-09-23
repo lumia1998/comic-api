@@ -2,12 +2,16 @@ import time
 import json
 import hashlib
 import base64
+import logging
 import threading
 from typing import List, Dict, Any, Tuple
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from src.config import Config
 from src.clients.base import BaseClient
+
+log = logging.getLogger("comic.jm")
+
 
 class JmClient(BaseClient):
     def __init__(self):
@@ -16,6 +20,7 @@ class JmClient(BaseClient):
         self.image_base = Config.JM_FALLBACK_IMAGE_BASE
         self.jwt_token = ""
         self.host_resolved = False
+        self._resolve_after = 0.0
         self._auth_lock = threading.RLock()
 
     def md5_hex(self, text: str) -> str:
@@ -120,8 +125,8 @@ class JmClient(BaseClient):
                     self.image_base = self.image_base.rstrip("/")
                 self.host_resolved = True
                 return True
-        except Exception as e:
-            print(f"[JmClient] Failed to resolve dynamic hosts: {e}")
+        except Exception:
+            log.warning("Failed to resolve dynamic hosts", exc_info=True)
         return False
 
     def get_api_headers(self, ts: int, jwt_token: str = "") -> dict:
@@ -144,8 +149,12 @@ class JmClient(BaseClient):
         _auth_retry: bool = False,
         _force_no_auth: bool = False,
     ) -> Any:
+        # Host probing hits two remote config URLs with timeouts; throttle repeats after failures.
         if not self.host_resolved:
-            self.resolve_dynamic_hosts()
+            with self._auth_lock:
+                if not self.host_resolved and time.monotonic() >= self._resolve_after:
+                    if not self.resolve_dynamic_hosts():
+                        self._resolve_after = time.monotonic() + 60
 
         ts = int(time.time())
         with self._auth_lock:
@@ -265,7 +274,7 @@ class JmClient(BaseClient):
                 })
             return results
         except Exception as e:
-            print(f"[JmClient] search error: {e}")
+            log.warning("search error", exc_info=True)
             raise
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
@@ -310,7 +319,7 @@ class JmClient(BaseClient):
                 "source": "jm"
             }
         except Exception as e:
-            print(f"[JmClient] get_comic_detail error: {e}")
+            log.warning("get_comic_detail error", exc_info=True)
             raise
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
@@ -341,7 +350,7 @@ class JmClient(BaseClient):
                     image_urls.append(f"{self.image_base}/media/photos/{chapter_id}/{img_name}")
             return image_urls
         except Exception as e:
-            print(f"[JmClient] get_chapter_images error: {e}")
+            log.warning("get_chapter_images error", exc_info=True)
             raise
 
     def _parse_jm_comics(self, content_list: list) -> List[Dict[str, Any]]:
@@ -382,16 +391,18 @@ class JmClient(BaseClient):
                 return self._parse_jm_comics(content)
             return []
         except Exception as e:
-            print(f"[JmClient] get_recommend error: {e}")
+            log.warning("get_recommend error", exc_info=True)
             raise
 
     def get_latest(self, page: int = 1) -> List[Dict[str, Any]]:
         """获取最新更新本子"""
         try:
             res = self.jm_request("/latest", method="GET", params={"page": str(page - 1)})
+            if isinstance(res, dict):
+                res = res.get("content", [])
             return self._parse_jm_comics(res)
         except Exception as e:
-            print(f"[JmClient] get_latest error: {e}")
+            log.warning("get_latest error", exc_info=True)
             raise
 
     def get_leaderboard(self, mode: str = "day", page: int = 1) -> List[Dict[str, Any]]:
@@ -408,7 +419,7 @@ class JmClient(BaseClient):
             content = res.get("content", [])
             return self._parse_jm_comics(content)
         except Exception as e:
-            print(f"[JmClient] get_leaderboard error: {e}")
+            log.warning("get_leaderboard error", exc_info=True)
             raise
 
     def get_category_comics(self, category_name: str, page: int = 1, sort: str = "new") -> List[Dict[str, Any]]:
@@ -436,5 +447,5 @@ class JmClient(BaseClient):
             content = res.get("content", [])
             return self._parse_jm_comics(content)
         except Exception as e:
-            print(f"[JmClient] get_category_comics error: {e}")
+            log.warning("get_category_comics error", exc_info=True)
             raise

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>comic</title>
-  <link rel="stylesheet" href="/static/app.css?v=13">
-  <script src="/static/app.js?v=13" defer></script>
+  <link rel="stylesheet" href="/static/app.css?v=17">
+  <script src="/static/app.js?v=17" defer></script>
 </head>
 <body>
   <header>
@@ -30,6 +30,18 @@
         <input id="keyword" placeholder="搜索漫画" maxlength="200" autofocus autocomplete="off" aria-label="搜索漫画">
         <button class="primary" type="submit" title="搜索" aria-label="搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
       </form>
+      <div id="discover" class="discover-bar" hidden>
+        <select id="discover-source" aria-label="图源"></select>
+        <select id="discover-action" aria-label="浏览方式"></select>
+        <select id="discover-opt" aria-label="筛选" hidden></select>
+        <select id="discover-sort" aria-label="排序" hidden></select>
+        <span id="discover-pager" class="discover-pager">
+          <button id="discover-prev" class="icon-btn" type="button" title="上一页" aria-label="上一页"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+          <span id="discover-page"></span>
+          <button id="discover-next" class="icon-btn" type="button" title="下一页" aria-label="下一页"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+        </span>
+        <button id="discover-again" type="button" hidden>换一批</button>
+      </div>
       <p id="browse-status" role="status"></p><div id="results" class="grid"></div>
     </section>
     <section id="library" hidden>
@@ -42,7 +54,7 @@
       <div id="tasks"></div>
     </section>
   </main>
-  <dialog id="detail-dialog"><div class="dialog-head"><h2 id="detail-title">漫画详情</h2><button class="icon-btn" data-close="detail-dialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div id="detail-body"></div></dialog>
+  <dialog id="detail-dialog"><div class="dialog-head"><h2 id="detail-title">漫画详情</h2><input id="chapter-filter" placeholder="筛选章节" maxlength="50" aria-label="筛选章节" hidden><button class="icon-btn" data-close="detail-dialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div id="detail-body"></div></dialog>
   <dialog id="account-dialog"><div class="dialog-head"><h2>图源管理</h2><button class="icon-btn" data-close="account-dialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div id="source-list"></div></dialog>
   <dialog id="source-settings-dialog"><div class="dialog-head"><h2 id="source-settings-title">图源设置</h2><button class="icon-btn" data-close="source-settings-dialog" title="返回图源列表" aria-label="返回图源列表"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button></div>
     <div id="source-settings-body"></div>

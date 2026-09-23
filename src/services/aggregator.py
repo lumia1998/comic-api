@@ -2,8 +2,11 @@ import asyncio
 import hashlib
 import os
 import io
+import ipaddress
+import logging
 import math
 import shutil
+import socket
 import tempfile
 import time
 import urllib.parse
@@ -15,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.sources import load_sources
 from src.storage import Store
 from src.errors import ComicApiError, DownloadCancelled
+
+log = logging.getLogger("comic.aggregator")
 
 
 class AggregatorService:
@@ -104,11 +109,50 @@ class AggregatorService:
             await asyncio.wait_for(self._image_slots.acquire(), timeout=10)
         except asyncio.TimeoutError as exc:
             raise ComicApiError("图片请求繁忙", 429, "busy", source) from exc
+        key = hashlib.sha256(f"{source}:{url}".encode()).hexdigest()[:32]
+        cache = self.store.root / "image_cache"
+        path = cache / f"{key}.img"
+
         def process():
-            return plugin.transform_image(self._download_image(plugin.client, url), chapter_id, url)
+            if path.is_file():
+                return path.read_bytes()
+            self._ensure_public_url(url)
+            data = plugin.transform_image(self._download_image(plugin.client, url), chapter_id, url)
+            try:
+                cache.mkdir(exist_ok=True)
+                path.write_bytes(data)
+                self._trim_image_cache(cache)
+            except OSError:
+                pass
+            return data
+
         task = asyncio.create_task(asyncio.to_thread(process))
         task.add_done_callback(lambda done: (self._image_slots.release(), done.exception() if not done.cancelled() else None))
         return await asyncio.shield(task)
+
+    @staticmethod
+    def _trim_image_cache(cache, keep=2000):
+        files = sorted(cache.iterdir(), key=lambda item: item.stat().st_mtime)
+        for stale in files[:-keep]:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+
+    @staticmethod
+    def _ensure_public_url(url):
+        """The proxy endpoint takes user-supplied URLs; refuse private/reserved addresses."""
+        hostname = urllib.parse.urlparse(url).hostname or ""
+        try:
+            addresses = {entry[4][0] for entry in socket.getaddrinfo(hostname, None)}
+        except OSError as exc:
+            raise ComicApiError("图片地址无法解析", 502, "image_dns_failed") from exc
+        for address in addresses:
+            try:
+                if not ipaddress.ip_address(address).is_global:
+                    raise ComicApiError("图片地址不被允许", 400, "invalid_request")
+            except ValueError:
+                raise ComicApiError("图片地址不被允许", 400, "invalid_request")
 
     def _download_image(self, client: Any, url: str, retries: int = 3) -> bytes:
         """使用 Client 自身的 BaseClient.request 来下载图片二进制。
@@ -142,53 +186,6 @@ class AggregatorService:
                 time.sleep(0.5 * (attempt + 1))
 
         raise last_err or Exception(f"Failed to download image from {url}")
-
-    def _jm_image_filename(self, url: str) -> str:
-        path = urllib.parse.urlparse(url).path
-        filename = path.rsplit("/", 1)[-1]
-        if "." in filename:
-            filename = filename.rsplit(".", 1)[0]
-        return filename or ""
-
-    def _jm_scramble_num(self, chapter_id: str, filename: str) -> int:
-        try:
-            ch_id = int(str(chapter_id).strip())
-        except Exception:
-            return 0
-        if ch_id < 220980:
-            return 0
-        if ch_id < 268850:
-            return 10
-
-        modulus = 10 if ch_id < 421926 else 8
-        digest = hashlib.md5(f"{ch_id}{filename}".encode("utf-8")).hexdigest()
-        value = ord(digest[-1]) % modulus
-        return value * 2 + 2
-
-    def _descramble_jm_image(self, data: bytes, chapter_id: str, image_url: str) -> bytes:
-        filename = self._jm_image_filename(image_url)
-        scramble_num = self._jm_scramble_num(chapter_id, filename)
-        if scramble_num <= 1:
-            return data
-
-        with Image.open(io.BytesIO(data)) as img:
-            width, height = img.size
-            slice_height = height // scramble_num
-            remainder = height % scramble_num
-            if slice_height <= 0:
-                return data
-
-            fixed = Image.new(img.mode, (width, height))
-            for index in range(scramble_num):
-                src_y = height - slice_height * (index + 1) - remainder
-                dst_y = slice_height * index + (0 if index == 0 else remainder)
-                current_height = slice_height + (remainder if index == 0 else 0)
-                box = (0, src_y, width, src_y + current_height)
-                fixed.paste(img.crop(box), (0, dst_y))
-
-            output = io.BytesIO()
-            fixed.save(output, format=img.format or "JPEG")
-            return output.getvalue()
 
     def _download_images_parallel(self, client: Any, urls: List[str], out_dir: str, source: str = "", chapter_id: str = "", concurrency: int = 4, progress=None, cancelled=None) -> List[str]:
         results = {}
@@ -275,21 +272,21 @@ class AggregatorService:
         for scale in scales:
             for q in qualities:
                 scale_text = f", 缩放 {scale:.2f}x" if scale < 1.0 else ""
-                print(f"[comic-api] 尝试以 JPEG 质量 {q}{scale_text} 压缩 PDF ...", flush=True)
+                log.info("尝试以 JPEG 质量 %d%s 压缩 PDF ...", q, scale_text)
                 pdf_bytes = self._make_pdf_bytes(image_paths, q, scale)
                 size = len(pdf_bytes)
                 last_pdf_bytes = pdf_bytes
                 last_size = size
-                print(f"[comic-api] 压缩结果体积: {size / (1024 * 1024):.2f}MB, 目标限额: {limit_bytes / (1024 * 1024):.2f}MB", flush=True)
+                log.info("压缩结果体积: %.2fMB, 目标限额: %.2fMB", size / (1024 * 1024), limit_bytes / (1024 * 1024))
 
                 if size <= limit_bytes:
                     with open(pdf_path, "wb") as f:
                         f.write(pdf_bytes)
                     return
 
-        print(
-            f"[comic-api] 警告：已尝试最低质量和最小缩放，文件体积 ({last_size / (1024 * 1024):.1f}MB) 仍超出限制，将直接发送。",
-            flush=True,
+        log.warning(
+            "已尝试最低质量和最小缩放，文件体积 (%.1fMB) 仍超出限制，将直接发送。",
+            last_size / (1024 * 1024),
         )
         with open(pdf_path, "wb") as f:
             f.write(last_pdf_bytes)
@@ -368,9 +365,9 @@ class AggregatorService:
                     raise DownloadCancelled()
                 encrypted_size = os.path.getsize(pdf_path)
                 if encrypted_size > limit_bytes:
-                    print(
-                        f"[comic-api] 警告：加密后 PDF 体积 {encrypted_size / (1024 * 1024):.2f}MB 超出目标限额 {limit_bytes / (1024 * 1024):.2f}MB。",
-                        flush=True,
+                    log.warning(
+                        "加密后 PDF 体积 %.2fMB 超出目标限额 %.2fMB。",
+                        encrypted_size / (1024 * 1024), limit_bytes / (1024 * 1024),
                     )
                 return pdf_path
             except Exception as e:

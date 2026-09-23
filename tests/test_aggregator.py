@@ -9,6 +9,7 @@ from PIL import Image
 
 from src.services.aggregator import AggregatorService
 from src.services.aggregator import ComicApiError
+from src.services.images import jm_image_filename, jm_scramble_num, descramble_jm_image
 
 
 def expected_jm_scramble_num(chapter_id: int, filename: str) -> int:
@@ -55,25 +56,22 @@ def image_bytes(image: Image.Image) -> bytes:
 
 
 def test_jm_scramble_num_matches_jmcomic_thresholds():
-    service = AggregatorService.__new__(AggregatorService)
-
-    assert service._jm_image_filename("https://cdn.test/media/photos/268850/00001.jpg?v=1") == "00001"
-    assert service._jm_scramble_num("220979", "00001") == 0
-    assert service._jm_scramble_num("220980", "00001") == 10
-    assert service._jm_scramble_num("268850", "00001") == expected_jm_scramble_num(268850, "00001")
-    assert service._jm_scramble_num("421926", "00001") == expected_jm_scramble_num(421926, "00001")
+    assert jm_image_filename("https://cdn.test/media/photos/268850/00001.jpg?v=1") == "00001"
+    assert jm_scramble_num("220979", "00001") == 0
+    assert jm_scramble_num("220980", "00001") == 10
+    assert jm_scramble_num("268850", "00001") == expected_jm_scramble_num(268850, "00001")
+    assert jm_scramble_num("421926", "00001") == expected_jm_scramble_num(421926, "00001")
 
 
-def test_descramble_jm_image_restores_reordered_slices(monkeypatch):
-    service = AggregatorService.__new__(AggregatorService)
+def test_descramble_jm_image_restores_reordered_slices():
     decoded = striped_image()
     scrambled = scramble_image(decoded, num=4)
-    monkeypatch.setattr(service, "_jm_scramble_num", lambda _chapter_id, _filename: 4)
 
-    restored = Image.open(io.BytesIO(service._descramble_jm_image(
+    restored = Image.open(io.BytesIO(descramble_jm_image(
         image_bytes(scrambled),
         "268850",
         "https://cdn.test/media/photos/268850/00001.png",
+        count=4,
     )))
 
     assert list(restored.getdata()) == list(decoded.getdata())

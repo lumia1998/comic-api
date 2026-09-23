@@ -144,10 +144,8 @@ def create_app(store=None, sources=None):
 
     @app.patch("/api/library/{source}/{comic_id}")
     async def categorize(source: str, comic_id: str, data: BookInput):
-        with store.connect() as db:
-            result = db.execute("UPDATE library SET category=? WHERE source=? AND comic_id=?", (data.category, source, comic_id))
-            if not result.rowcount:
-                raise ComicApiError("未收藏该漫画", 404, "not_found")
+        if not store.set_category(source, comic_id, data.category):
+            raise ComicApiError("未收藏该漫画", 404, "not_found")
         return {"success": True}
 
     @app.post("/api/library/{source}/{comic_id}/refresh")
@@ -202,12 +200,19 @@ def create_app(store=None, sources=None):
     @app.get("/api/download/{source}/{comic_id}/{chapter_id}")
     async def legacy_download(source: str, comic_id: str, chapter_id: str, title: str = "", chapter: str = ""):
         task = downloads.create(source, comic_id, chapter_id, title, chapter)
+        deadline = asyncio.get_running_loop().time() + 600
         while True:
             current = downloads.require(task["id"])
             if current["status"] == "completed":
                 return await download_file(task["id"])
             if current["status"] in ("failed", "cancelled"):
                 raise ComicApiError(current["error"] or "任务已取消", 502, "download_failed", source)
+            if asyncio.get_running_loop().time() > deadline:
+                try:
+                    downloads.cancel(task["id"])
+                except ComicApiError:
+                    pass
+                raise ComicApiError("下载超时", 504, "download_timeout", source)
             await asyncio.sleep(0.5)
 
     @app.get("/api/{source}/{action}")
