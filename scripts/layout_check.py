@@ -17,32 +17,33 @@ with sync_playwright() as p:
     page.goto(BASE)
     page.wait_for_timeout(2500)
 
-    # --- home / discover bar ---
+    # --- home: search + quick links + preview shelf, no filters ---
     d = page.evaluate("""() => ({
-        discoverHidden: document.getElementById('discover').hidden,
-        srcOptions: document.getElementById('discover-source').options.length,
-        actionOptions: [...document.getElementById('discover-action').options].map(o=>o.value),
+        resultsHidden: document.getElementById('results-view').hidden,
+        quickLinks: document.querySelectorAll('#quick .quick-link').length,
+        shelfVisible: !document.getElementById('home-feed').hidden,
         hOverflow: document.documentElement.scrollWidth > innerWidth,
-        searchBox: document.querySelector('.searchbox').getBoundingClientRect().width,
         wordmarkSize: getComputedStyle(document.querySelector('.wordmark')).fontSize,
     })""")
-    check("discover bar visible", not d["discoverHidden"])
-    check("source select populated", d["srcOptions"] >= 1, f"{d['srcOptions']} sources")
-    check("action options", d["actionOptions"], str(d["actionOptions"]))
+    check("home hides filters", d["resultsHidden"])
+    check("quick links", d["quickLinks"] >= 1, f"{d['quickLinks']} links")
+    check("home shelf visible", d["shelfVisible"])
     check("no horizontal overflow (desktop)", not d["hOverflow"])
     check("wordmark large", float(d["wordmarkSize"].rstrip("px")) > 60, d["wordmarkSize"])
 
     # --- search nikke ---
     page.fill("#keyword", "nikke")
     page.click("#browse-form button[type=submit]")
-    page.wait_for_selector("#results .card", timeout=60000)
+    page.wait_for_selector("#results .card:not(.skeleton)", timeout=60000)
     page.wait_for_timeout(2000)
+    check("search shows filters", page.evaluate("() => !document.getElementById('results-view').hidden && document.querySelectorAll('#filters .chip').length > 0"))
     r = page.evaluate("""() => {
         const cards=[...document.querySelectorAll('#results .card')];
         const first=cards[0].getBoundingClientRect();
-        const imgs=[...document.querySelectorAll('#results .cover')];
+        const imgs=[...document.querySelectorAll('#results .cover img')];
         const loaded=imgs.filter(i=>i.complete&&i.naturalWidth>0).length;
-        const ratio=imgs[0].naturalWidth/imgs[0].naturalHeight;
+        const firstImg=imgs.find(i=>i.naturalWidth>0);
+        const ratio=firstImg?firstImg.naturalWidth/firstImg.naturalHeight:NaN;
         return {count:cards.length, w:first.width, h:first.height,
                 title:first.title, loaded, total:imgs.length, ratio,
                 status:document.getElementById('browse-status').textContent,
@@ -62,14 +63,14 @@ with sync_playwright() as p:
         const dlg=document.getElementById('detail-dialog');
         const box=dlg.getBoundingClientRect();
         const chapters=document.querySelectorAll('#detail-body .chapter');
-        const cover=document.querySelector('#detail-body .cover-wrap img');
+        const cover=document.querySelector('#detail-body .detail-cover img');
         return {open:dlg.open, w:box.width, h:box.height,
                 vw:innerWidth, vh:innerHeight,
                 chapters:chapters.length,
-                filterVisible:!document.getElementById('chapter-filter').hidden,
+                filterVisible:!!document.getElementById('chapter-filter'),
                 title:document.getElementById('detail-title').textContent,
                 coverLoaded:cover?cover.complete&&cover.naturalWidth>0:null,
-                actions:document.querySelectorAll('#detail-body .detail-text .icon-btn').length};
+                actions:document.querySelectorAll('#detail-body .detail-actions button').length};
     }""")
     check("detail dialog open", d["open"], f"title={d['title']}")
     check("dialog sized", d["w"] <= d["vw"] and d["h"] <= d["vh"], f"{d['w']:.0f}x{d['h']:.0f}")
@@ -78,7 +79,7 @@ with sync_playwright() as p:
     check("detail actions", d["actions"] >= 1, f"{d['actions']} action btns")
 
     # --- reader (chapter row click opens it) ---
-    page.locator("#detail-body .chapter span").first.click()
+    page.locator("#detail-body .chapter .chapter-name").first.click()
     page.wait_for_timeout(6000)
     d = page.evaluate("""() => {
         const dlg=document.getElementById('reader-dialog');
@@ -113,14 +114,14 @@ with sync_playwright() as p:
     d = page.evaluate("""() => ({status:document.getElementById('page-status').textContent,
         imgs:document.querySelectorAll('#reader-pages img').length})""")
     check("paged single img", d["imgs"] == 1, f"{d['imgs']} img, status={d['status']}")
-    page.mouse.click(1100, 400)  # right third -> next page
-    page.wait_for_timeout(1500)
-    s1 = page.evaluate("() => document.getElementById('page-status').textContent")
-    check("right tap = next page", s1 != d["status"], f"{d['status']} -> {s1}")
     page.mouse.click(170, 400)  # left third -> prev page
     page.wait_for_timeout(1500)
+    s1 = page.evaluate("() => document.getElementById('page-status').textContent")
+    check("left tap = prev page", s1 != d["status"], f"{d['status']} -> {s1}")
+    page.mouse.click(1100, 400)  # right third -> next page
+    page.wait_for_timeout(1500)
     s2 = page.evaluate("() => document.getElementById('page-status').textContent")
-    check("left tap = prev page", s2 != s1, f"{s1} -> {s2}")
+    check("right tap = next page", s2 != s1, f"{s1} -> {s2}")
     page.mouse.click(640, 400)  # middle -> toggle UI
     page.wait_for_timeout(400)
     ui = page.evaluate("() => document.getElementById('reader-dialog').classList.contains('ui-open')")
@@ -170,9 +171,9 @@ with sync_playwright() as p:
     m.wait_for_timeout(2500)
     md = m.evaluate("""() => ({overflow:document.documentElement.scrollWidth > innerWidth,
         navWrap:document.querySelector('nav').getBoundingClientRect().width >= innerWidth*0.9,
-        discoverVisible:!document.getElementById('discover').hidden})""")
+        filtersHidden:document.getElementById('results-view').hidden})""")
     check("mobile no overflow", not md["overflow"])
-    check("mobile discover bar", md["discoverVisible"])
+    check("mobile home hides filters", md["filtersHidden"])
 
     browser.close()
 

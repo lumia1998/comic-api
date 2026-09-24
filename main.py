@@ -138,12 +138,18 @@ def create_app(store=None, sources=None):
         return {"success": True}
 
     @app.get("/api/search")
-    async def search(keyword: str = Query(min_length=1, max_length=200), source: str = "", page: int = Query(1, ge=1, le=1000)):
+    async def search(keyword: str = Query(min_length=1, max_length=200), source: str = "",
+                     page: int = Query(1, ge=1, le=1000), sort: str = Query(default="", max_length=64)):
         if source:
-            result = await service.call(source, "search", keyword, page)
+            # Sort only applies when the plugin advertises search_sorts; keep the
+            # base search(keyword, page) signature working for older plugins.
+            if sort and sort not in [item["value"] for item in service.source(source).search_sorts]:
+                raise ComicApiError("图源不支持此搜索排序", 422, "invalid_request", source)
+            kwargs = {"sort": sort} if sort else {}
+            result = await service.call(source, "search", keyword, page, **kwargs)
             items = service.rank_results(keyword, [dict(item, source=source) for item in result])
             return {"items": items, "all_results": {source: items}, "errors": {}}
-        return await service.aggregate_search(keyword)
+        return await service.aggregate_search(keyword, page)
 
     @app.get("/api/comic/{source}/{comic_id}")
     async def detail(source: str, comic_id: str):

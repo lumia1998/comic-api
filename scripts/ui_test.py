@@ -80,7 +80,7 @@ with sync_playwright() as p:
             page.fill("#chapter-filter", "")
 
         # --- open reader by clicking a chapter row ---
-        rows = page.locator("#detail-body .chapter span")
+        rows = page.locator("#detail-body .chapter .chapter-name")
         if rows.count():
             rows.first.click()
             page.wait_for_timeout(5000)

@@ -61,10 +61,10 @@ class AggregatorService:
         # Stable ties preserve upstream order; identical titles across sources stay selectable.
         return sorted(items, key=score, reverse=True)
 
-    async def aggregate_search(self, keyword: str) -> Dict[str, Any]:
+    async def aggregate_search(self, keyword: str, page: int = 1) -> Dict[str, Any]:
         """Search registered sources independently and retain partial failures."""
         keys = [key for key, plugin in self.sources.items() if "search" in plugin.capabilities]
-        results = await asyncio.gather(*(self.call(key, "search", keyword) for key in keys), return_exceptions=True)
+        results = await asyncio.gather(*(self.call(key, "search", keyword, page) for key in keys), return_exceptions=True)
         all_results, errors, candidates = {}, {}, []
         for key, result in zip(keys, results):
             if isinstance(result, Exception):

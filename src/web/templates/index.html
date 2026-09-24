@@ -1,76 +1,156 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>comic</title>
-  <link rel="stylesheet" href="/static/app.css?v=18">
-  <script src="/static/app.js?v=18" defer></script>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0e0e12">
+  <meta name="description" content="聚合多个漫画源的一站式搜索、在线阅读与下载平台">
+  <title>Comic · 聚合漫画</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f26d3f'/%3E%3Cpath d='M9 7h10a4 4 0 0 1 4 4v14h-2.5a4.5 4.5 0 0 0-4.5-4.5H9z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css?v=27">
+  <script src="/static/app.js?v=27" defer></script>
 </head>
 <body>
+  <div id="scroll-progress" aria-hidden="true"></div>
   <header>
-    <nav aria-label="主导航">
-      <button data-tab="browse" class="active">发现漫画</button>
-      <button data-tab="library">我的书库</button>
-      <button data-tab="downloads">下载任务</button>
+    <a class="brand" id="brand" href="/" aria-label="Comic 首页">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M9 7h10a4 4 0 0 1 4 4v14h-2.5a4.5 4.5 0 0 0-4.5-4.5H9z" fill="#fff"/></svg>
+      <span>Comic</span>
+    </a>
+    <nav class="tabs" aria-label="主导航">
+      <button data-tab="browse" class="active" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg><span>发现漫画</span></button>
+      <button data-tab="library" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span>我的书库</span></button>
+      <button data-tab="downloads" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>下载任务</span><i class="tab-dot" data-downloads-dot hidden></i></button>
     </nav>
     <div class="actions">
-      <button id="theme" class="icon-btn" title="切换主题" aria-label="切换主题">
+      <button id="theme" class="icon-btn ghost" type="button" title="切换主题" aria-label="切换主题">
         <svg class="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
         <svg class="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
       </button>
-      <button id="accounts" class="icon-btn" title="图源管理" aria-label="图源管理">
+      <button id="accounts" class="icon-btn ghost" type="button" title="图源管理" aria-label="图源管理">
         <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
       </button>
     </div>
   </header>
   <main>
-    <section id="browse">
-      <h1 class="wordmark">Comic</h1>
-      <form id="browse-form" class="searchbox" autocomplete="off">
-        <input id="keyword" placeholder="搜索漫画" maxlength="200" autofocus autocomplete="off" aria-label="搜索漫画">
-        <button class="primary" type="submit" title="搜索" aria-label="搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
-      </form>
-      <div id="discover" class="discover-bar" hidden>
-        <select id="discover-source" aria-label="图源"></select>
-        <select id="discover-action" aria-label="浏览方式"></select>
-        <select id="discover-opt" aria-label="筛选" hidden></select>
-        <select id="discover-sort" aria-label="排序" hidden></select>
-        <span id="discover-pager" class="discover-pager">
+    <section id="browse" class="view-home">
+      <div class="hero">
+        <h1 class="wordmark"><a id="home-link" href="/" title="返回首页">Comic<i class="dot">.</i></a></h1>
+        <p class="tagline">聚合多个漫画源 · 一站搜索 · 在线阅读与下载</p>
+        <form id="browse-form" class="searchbox" autocomplete="off" role="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input id="keyword" type="search" placeholder="搜索漫画、作者…" maxlength="200" autofocus autocomplete="off" enterkeyhint="search" aria-label="搜索漫画">
+          <kbd class="search-kbd" aria-hidden="true">/</kbd>
+          <button id="keyword-clear" class="clear-btn" type="button" title="清空" aria-label="清空" hidden><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+          <button class="primary" type="submit">搜索</button>
+        </form>
+        <div id="quick" class="quick" aria-label="快速浏览"></div>
+        <div id="recent" class="recent" hidden>
+          <span class="recent-label">最近搜索</span>
+          <div id="recent-list" class="recent-list"></div>
+          <button id="recent-clear" class="link-btn" type="button">清除</button>
+        </div>
+      </div>
+      <div id="home-feed" class="feed" hidden>
+        <section id="continue-shelf" class="shelf" hidden>
+          <div class="shelf-head">
+            <h2>继续阅读</h2>
+            <button id="history-clear" class="link-btn" type="button">清除记录</button>
+          </div>
+          <div id="continue-row" class="row"></div>
+        </section>
+        <div id="source-shelves"></div>
+      </div>
+      <div id="results-view" hidden>
+        <div class="results-head">
+          <button id="results-back" class="icon-btn ghost" type="button" title="返回首页" aria-label="返回首页"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button>
+          <h2 id="results-title"></h2>
+          <span id="results-meta" class="muted"></span>
+        </div>
+        <div id="filters" class="filters"></div>
+        <p id="browse-status" class="status" role="status"></p>
+        <div id="results" class="grid"></div>
+        <div id="results-more" class="more-row" hidden><button id="results-more-btn" type="button"></button></div>
+        <div id="pager" class="pager" hidden>
           <button id="discover-prev" class="icon-btn" type="button" title="上一页" aria-label="上一页"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
           <span id="discover-page"></span>
           <button id="discover-next" class="icon-btn" type="button" title="下一页" aria-label="下一页"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
-        </span>
-        <button id="discover-again" type="button" hidden>换一批</button>
+          <button id="discover-again" type="button" hidden><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>换一批</button>
+        </div>
       </div>
-      <p id="browse-status" role="status"></p><div id="results" class="grid"></div>
     </section>
     <section id="library" hidden>
-      <div class="section-head"><h1>我的书库</h1><button id="library-refresh" class="icon-btn" title="刷新书库" aria-label="刷新书库"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>
+      <div class="section-head">
+        <div class="section-title"><h1>我的书库</h1><span id="library-count" class="count"></span></div>
+        <button id="library-refresh" class="icon-btn" type="button" title="刷新书库" aria-label="刷新书库"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button>
+      </div>
       <div class="library-filters">
-        <label>分类<select id="library-category"><option value="*">全部分类</option></select></label>
-        <label>筛选<input id="library-filter" placeholder="按标题或作者筛选" maxlength="100"></label>
+        <select id="library-category" aria-label="分类"><option value="*">全部分类</option></select>
+        <select id="library-sort" aria-label="排序方式"><option value="updated">最近更新</option><option value="read">最近阅读</option><option value="title">标题</option></select>
+        <div class="input-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input id="library-filter" type="search" placeholder="按标题或作者筛选" maxlength="100" aria-label="按标题或作者筛选">
+        </div>
       </div>
       <div id="books" class="grid"></div>
     </section>
     <section id="downloads" hidden>
-      <div class="section-head"><h1>下载任务</h1><button id="tasks-refresh" class="icon-btn" title="刷新任务" aria-label="刷新任务"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>
+      <div class="section-head">
+        <div class="section-title"><h1>下载任务</h1><span id="tasks-summary" class="muted"></span></div>
+        <button id="tasks-refresh" class="icon-btn" type="button" title="刷新任务" aria-label="刷新任务"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button>
+      </div>
       <div id="tasks"></div>
     </section>
   </main>
-  <dialog id="detail-dialog"><div class="dialog-head"><h2 id="detail-title">漫画详情</h2><input id="chapter-filter" placeholder="筛选章节" maxlength="50" aria-label="筛选章节" hidden><button class="icon-btn" data-close="detail-dialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div id="detail-body"></div></dialog>
-  <dialog id="account-dialog"><div class="dialog-head"><h2>图源管理</h2><button class="icon-btn" data-close="account-dialog" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><div id="source-list"></div></dialog>
-  <dialog id="source-settings-dialog"><div class="dialog-head"><h2 id="source-settings-title">图源设置</h2><button class="icon-btn" data-close="source-settings-dialog" title="返回图源列表" aria-label="返回图源列表"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button></div>
+  <nav id="tabbar" class="tabbar" aria-label="主导航">
+    <button data-tab="browse" class="active" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg><span>发现</span></button>
+    <button data-tab="library" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span>书库</span></button>
+    <button data-tab="downloads" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>下载</span><i class="tab-dot" data-downloads-dot hidden></i></button>
+  </nav>
+  <button id="to-top" class="icon-btn" type="button" title="回到顶部" aria-label="回到顶部"><svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>
+
+  <dialog id="detail-dialog" class="sheet">
+    <div class="dialog-head floating"><h2 id="detail-title">漫画详情</h2><button class="icon-btn" data-close="detail-dialog" type="button" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div>
+    <div id="detail-body"></div>
+  </dialog>
+  <dialog id="account-dialog"><div class="dialog-head"><h2>图源管理</h2><button class="icon-btn" data-close="account-dialog" type="button" title="关闭" aria-label="关闭"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div>
+    <p class="dialog-intro muted">每个图源独立请求，某个图源不可用时不影响其他图源。圆点表示最近一次连通检测结果。</p>
+    <div id="source-list"></div>
+    <div class="dialog-foot"><button id="health-recheck" type="button" class="small"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>重新检测</button></div>
+  </dialog>
+  <dialog id="source-settings-dialog"><div class="dialog-head"><h2 id="source-settings-title">图源设置</h2><button class="icon-btn" data-close="source-settings-dialog" type="button" title="返回图源列表" aria-label="返回图源列表"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button></div>
     <div id="source-settings-body"></div>
   </dialog>
-  <dialog id="credentials-dialog"><div class="dialog-head"><h2 id="credentials-title">登录凭证</h2><button class="icon-btn" data-close="credentials-dialog" title="返回设置" aria-label="返回设置"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button></div><div id="account-state"></div><form id="login-form"></form></dialog>
+  <dialog id="credentials-dialog"><div class="dialog-head"><h2 id="credentials-title">登录凭证</h2><button class="icon-btn" data-close="credentials-dialog" type="button" title="返回设置" aria-label="返回设置"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button></div><div id="account-state"></div><form id="login-form"></form></dialog>
+  <dialog id="ask-dialog" class="ask">
+    <form id="ask-form" method="dialog">
+      <h2 id="ask-title"></h2>
+      <p id="ask-message" class="muted"></p>
+      <input id="ask-input" list="ask-options" maxlength="100">
+      <datalist id="ask-options"></datalist>
+      <div class="ask-actions"><button id="ask-cancel" type="button">取消</button><button id="ask-ok" class="primary" type="submit">确定</button></div>
+    </form>
+  </dialog>
   <dialog id="reader-dialog">
-    <div class="reader-toolbar"><button id="reader-close">退出阅读</button><span id="reader-title"></span></div>
+    <div class="reader-toolbar">
+      <button id="reader-close" class="icon-btn ghost" type="button" title="退出阅读 (Esc)" aria-label="退出阅读"><svg viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button>
+      <div class="reader-heading"><strong id="reader-comic"></strong><span id="reader-title"></span></div>
+      <select id="reader-chapter" aria-label="选择章节"></select>
+      <span id="page-status" class="reader-status"></span>
+      <select id="reader-mode" aria-label="阅读模式"><option value="scroll">滚动</option><option value="page">翻页</option></select>
+      <button id="reader-download" class="icon-btn ghost" type="button" title="下载本章 PDF" aria-label="下载本章 PDF"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      <button id="reader-fullscreen" class="icon-btn ghost" type="button" title="全屏" aria-label="全屏"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+      <i id="reader-progress" aria-hidden="true"></i>
+    </div>
     <div id="reader-pages"></div>
     <div class="reader-controls">
-      <select id="reader-mode" aria-label="阅读模式"><option value="scroll">滚动阅读</option><option value="page">翻页阅读</option></select>
-      <button id="chapter-prev">上一章</button><button id="page-prev">上一页</button><span id="page-status"></span><button id="page-next">下一页</button><button id="chapter-next">下一章</button>
+      <button id="chapter-prev" type="button" title="上一章"><svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg><span>上一章</span></button>
+      <button id="page-prev" type="button" title="上一页"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+      <input id="page-slider" type="range" min="1" max="1" value="1" aria-label="跳转页码">
+      <button id="page-next" type="button" title="下一页"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+      <button id="chapter-next" type="button" title="下一章"><span>下一章</span><svg viewBox="0 0 24 24"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg></button>
     </div>
   </dialog>
-  <div id="toast" role="status" hidden></div>
+  <div id="toast" role="status" popover="manual" hidden></div>
+  <noscript><p style="position:fixed;inset:40% 20px auto;text-align:center;color:#8f8d95">Comic 需要启用 JavaScript 才能搜索和阅读漫画。</p></noscript>
 </body>
 </html>

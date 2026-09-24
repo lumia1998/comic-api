@@ -252,14 +252,14 @@ class BikaClient(BaseClient):
         with self._auth_lock:
             return self._login_locked(account, password)
 
-    def search(self, keyword: str, page: int = 1) -> List[Dict[str, Any]]:
+    def search(self, keyword: str, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
         """搜索漫画"""
         self.ensure_authenticated()
         res = self.bika_request("comics/advanced-search", method="POST", params={
             "page": str(page)
         }, json_body={
             "keyword": keyword,
-            "sort": "dd",
+            "sort": sort or "dd",
             "categories": []
         })
         return self._parse_comics_list(res)

@@ -70,7 +70,7 @@ python main.py
 | --- | --- | --- |
 | GET | `/api/sources` | 插件能力与账号状态，不返回凭据 |
 | POST / DELETE | `/api/sources/{source}/login` / `/api/sources/{source}/account` | 登录 / 退出 |
-| GET | `/api/search?keyword=&source=&page=1` | 搜索；省略 source 聚合各源首页 |
+| GET | `/api/search?keyword=&source=&page=&sort=` | 搜索；省略 source 聚合各源；sort 仅对声明 search_sorts 的图源生效 |
 | GET | `/api/comic/{source}/{comic_id}` | 详情 |
 | GET | `/api/chapter/{source}/{comic_id}/{chapter_id}` | 图片代理列表 |
 | GET | `/api/{source}/{action}` | latest / category / leaderboard / random，按能力开放 |

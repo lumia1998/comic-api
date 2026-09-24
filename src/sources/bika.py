@@ -12,6 +12,8 @@ class BikaPlugin(SourcePlugin):
                   ["嗶咔漢化", "同人", "全彩", "少女漫畫", "耽美", "妹子", "治癒", "都市", "冒險"]]
     sorts = [{"value": v, "label": n} for v, n in
              [("dd", "最新上架"), ("ld", "最多喜欢"), ("vd", "最多观看"), ("da", "最旧上架")]]
+    search_sorts = sorts
+    latest_sorts = sorts
     leaderboard_modes = [{"value": v, "label": n} for v, n in [("day", "日榜"), ("week", "周榜"), ("month", "月榜")]]
 
     def __init__(self, store):
@@ -28,6 +30,9 @@ class BikaPlugin(SourcePlugin):
         with self.client._auth_lock:
             self.store.save_account(self.id, {})
             self.client.authorization = self.client._account = self.client._password = ""
+
+    def search(self, keyword, page=1, sort=""):
+        return self.client.search(keyword, page, sort or "dd")
 
     def browse(self, action, page=1, sort="", mode="day", name=""):
         self.client.ensure_authenticated()

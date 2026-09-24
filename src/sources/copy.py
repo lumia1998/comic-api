@@ -65,7 +65,10 @@ class CopyPlugin(SourcePlugin):
             payload = response.json()
             code = int(payload.get("code", 0))
             if code != 200:
-                raise ComicApiError("拷贝漫画接口拒绝请求", code if code in (401,403,404,429) else 502, "upstream_error", self.id)
+                # Surface upstream's own explanation (e.g. code 210 temporary IP restriction).
+                reason = str(payload.get("message") or "").strip()[:200]
+                message = f"拷贝漫画拒绝请求：{reason}" if reason else "拷贝漫画接口拒绝请求"
+                raise ComicApiError(message, code if code in (401,403,404,429) else 502, "upstream_error", self.id)
             result = payload["results"]
             if not isinstance(result, dict):
                 raise ValueError("results is not an object")
@@ -86,7 +89,8 @@ class CopyPlugin(SourcePlugin):
                 items.append(self._comic(item))
         return items
 
-    def search(self, keyword, page=1):
+    def search(self, keyword, page=1, sort=""):
+        # 上游搜索接口不接受排序参数；排序由浏览接口提供。
         return self._items(self._get("search/comic", q=keyword, q_type="", limit=20, offset=(page-1)*20, platform=1))
 
     def detail(self, comic_id):
