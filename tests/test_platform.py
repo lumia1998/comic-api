@@ -286,3 +286,44 @@ def test_cancelled_caller_keeps_thread_permit(tmp_path):
             await service.call('demo', 'nonexistent')
         assert error.value.code == 'unsupported'
     asyncio.run(scenario())
+
+
+def test_index_asset_url_tracks_bundle_contents(client, tmp_path, monkeypatch):
+    """The ?v= token must be derived from the bundle, not hand-maintained.
+
+    A hand-bumped integer went stale for four UI commits, so returning browsers
+    kept rendering an old app.css/app.js after a deploy.
+    """
+    import main as app_module
+
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "app.css").write_text("body{}")
+    (static / "app.js").write_text("console.log(1)")
+    template = tmp_path / "index.html"
+    template.write_text(
+        '<link rel="stylesheet" href="/static/app.css?v=18">'
+        '<script src="/static/app.js?v=18" defer></script>'
+    )
+    monkeypatch.setattr(app_module, "WEB_STATIC", static)
+    monkeypatch.setattr(app_module, "INDEX_HTML", template)
+
+    first = client.get("/").text
+    assert "?v=18" not in first
+    assert f"?v={app_module.bundled_asset_version()}" in first
+    assert client.get("/").headers["cache-control"] == "no-cache"
+
+    (static / "app.css").write_text("body{color:red}")
+    second = client.get("/").text
+    assert second != first
+    assert f"?v={app_module.bundled_asset_version()}" in second
+
+
+def test_static_assets_cache_by_version(client):
+    versioned = client.get("/static/app.js?v=abc123")
+    assert versioned.status_code == 200
+    assert "immutable" in versioned.headers["cache-control"]
+
+    bare = client.get("/static/app.js")
+    assert bare.status_code == 200
+    assert bare.headers["cache-control"] == "no-cache"
