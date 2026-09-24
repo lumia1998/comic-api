@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import io
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
@@ -8,7 +10,7 @@ from urllib.parse import urlencode, urlparse
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -20,6 +22,40 @@ from src.storage import Store
 
 load_dotenv()
 ROOT = Path(__file__).resolve().parent
+WEB_STATIC = ROOT / "src/web/static"
+INDEX_HTML = ROOT / "src/web/templates/index.html"
+
+
+def bundled_asset_version() -> str:
+    """Content hash of the web bundle; changes whenever app.css/app.js change.
+
+    The template links assets as ``?v=<token>``. Deriving the token from file
+    contents (instead of a hand-bumped integer) is what keeps returning
+    browsers from serving a stale bundle after a deploy.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(p.name for p in WEB_STATIC.glob("*") if p.is_file()):
+        digest.update(name.encode("utf-8"))
+        digest.update((WEB_STATIC / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
+def versioned_index_html() -> str:
+    token = bundled_asset_version()
+    return re.sub(r"\?v=[^\"'&]+", f"?v={token}", INDEX_HTML.read_text(encoding="utf-8"))
+
+
+class VersionedStaticFiles(StaticFiles):
+    """Immutable caching for hash-versioned URLs, revalidation for the rest."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            if scope.get("query_string"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class BookInput(BaseModel):
@@ -47,7 +83,7 @@ def create_app(store=None, sources=None):
 
     app = FastAPI(title="Comic · 图源与书库", version="2.0.0", lifespan=lifespan)
     app.state.store, app.state.service, app.state.downloads = store, service, downloads
-    app.mount("/static", StaticFiles(directory=ROOT / "src/web/static"), name="static")
+    app.mount("/static", VersionedStaticFiles(directory=WEB_STATIC), name="static")
 
     @app.exception_handler(ComicApiError)
     async def source_error(request, exc):
@@ -68,7 +104,7 @@ def create_app(store=None, sources=None):
 
     @app.get("/")
     async def home():
-        return FileResponse(ROOT / "src/web/templates/index.html", media_type="text/html")
+        return HTMLResponse(versioned_index_html(), headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/sources")
     async def sources_list():
