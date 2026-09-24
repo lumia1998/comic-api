@@ -248,11 +248,11 @@ async function loadShelves(){
   for(const p of list){
     jobs.push(loadShelf(p,request));
     // A leaderboard shelf makes the home feed feel like a real product.
-    if((p.capabilities||[]).includes('leaderboard'))jobs.push(loadShelf(p,request,'leaderboard','日榜'));
+    if((p.capabilities||[]).includes('leaderboard')){const first=(p.leaderboard_modes||[])[0];if(first)jobs.push(loadShelf(p,request,'leaderboard',first.label,first.value));}
   }
   await Promise.all(jobs);
 }
-async function loadShelf(p,request,action,label){
+async function loadShelf(p,request,action,label,mode){
   const box=$('source-shelves');action=action||discoverActions(p)[0];
   const section=node('section',undefined,'shelf');section.dataset.source=p.id;if(label)section.dataset.action=action;
   const head=node('div',undefined,'shelf-head'),more=button('',()=>browseAction(action,p.id),'link-btn');
@@ -270,7 +270,7 @@ async function loadShelf(p,request,action,label){
   row.replaceChildren(...skeletons(8));
   try{
     const params=new URLSearchParams({page:1});
-    if(action==='leaderboard')params.set('mode','day');
+    if(action==='leaderboard')params.set('mode',mode||pick(p.leaderboard_modes||[],''));
     const sorts=sortsFor(p,action);if(sorts.length)params.set('sort',sorts[0].value);
     const data=await api(`/api/${enc(p.id)}/${action}?`+params);
     if(request!==state.shelfRequest)return;
@@ -688,8 +688,14 @@ function renderSourceSettings(){
   const plugin=state.sources.find(s=>s.id===state.settingsSource),body=$('source-settings-body');body.replaceChildren();if(!plugin)return;
   $('source-settings-title').textContent=plugin.name+' · 设置';
   for(const field of plugin.settings_fields||[]){const section=node('section',undefined,'setting-section');section.append(node('h3',field.label),node('p',field.description||'','muted'));
-    const form=node('form',undefined,'settings-form'),label=node('label',field.label),input=node('input');input.name=field.name;input.type=field.type==='url'?'url':'text';input.value=plugin.settings?.[field.name]||'';label.append(input);
-    const submit=node('button','保存服务器地址','primary');submit.type='submit';form.append(label,submit);form.onsubmit=event=>{event.preventDefault();run(async()=>{await api(`/api/sources/${enc(plugin.id)}/settings`,write('PUT',{...plugin.settings,[field.name]:input.value}));await loadSources();toast('设置已保存，后续请求使用新地址');},submit);};section.append(form);body.append(section);}
+    const form=node('form',undefined,'settings-form'),label=node('label',field.label);let input;
+    if(field.type==='select'&&Array.isArray(field.options)){input=node('select');input.name=field.name;
+      for(const option of field.options){const opt=node('option',option.label??option.value);opt.value=option.value;input.append(opt);}
+      input.value=plugin.settings?.[field.name]??field.options[0]?.value??'';
+      if(![...input.options].some(o=>o.value===input.value))input.selectedIndex=0;
+    }else{input=node('input');input.name=field.name;input.type=field.type==='url'?'url':'text';input.value=plugin.settings?.[field.name]||'';}
+    label.append(input);
+    const submit=node('button','保存','primary');submit.type='submit';form.append(label,submit);form.onsubmit=event=>{event.preventDefault();run(async()=>{await api(`/api/sources/${enc(plugin.id)}/settings`,write('PUT',{...plugin.settings,[field.name]:input.value}));await loadSources();toast('设置已保存，后续请求立即生效');},submit);};section.append(form);body.append(section);}
   if(plugin.capabilities.includes('login')){const section=node('section',undefined,'setting-section');section.append(node('h3','登录凭证'),node('p',accountLabel(plugin),'muted'),labelBtn('key','管理登录凭证',()=>{configureAccount();$('credentials-dialog').showModal();}));body.append(section);}
   if(!(plugin.settings_fields||[]).length&&!plugin.capabilities.includes('login'))body.append(node('p','此图源使用自动服务器配置，无需登录，暂无可修改选项。','muted'));
 }

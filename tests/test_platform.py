@@ -211,21 +211,30 @@ def test_source_settings_persist_and_replace_adapter(client):
     old = CopyPlugin(client.app.state.store)
     service.sources['copy'] = old
     manifest = client.get('/api/sources').json()['sources'][-1]
-    assert manifest['settings_fields'][0]['name'] == 'api_base'
+    fields = {field['name'] for field in manifest['settings_fields']}
+    assert fields == {'api_domain', 'api_base', 'platform'}
     assert 'login' not in manifest['capabilities']
     path = '/api/sources/copy/settings'
     assert client.put(path, json={'api_base': 'https://mirror.example/api/v3/'}).status_code == 200
     replacement = service.sources['copy']
     assert replacement.base == 'https://mirror.example/api/v3'
+    assert replacement.domain == '自定义'
     assert old.base != replacement.base
     assert replacement.client is old.client
     assert replacement._chapter_clock is old._chapter_clock
     assert CopyPlugin(client.app.state.store).base == replacement.base
+    assert client.put(path, json={'api_domain': '大陆专线3'}).status_code == 200
+    assert service.sources['copy'].base == 'https://api.2025copy.com/api/v3'
+    assert client.put(path, json={'api_domain': '不存在的线路'}).status_code == 422
+    assert client.put(path, json={'platform': '3'}).status_code == 200
+    assert service.sources['copy'].platform == '3'
+    assert client.put(path, json={'platform': '99'}).status_code == 422
     assert client.put(path, json={'api_base': 'https://user:password@host/api'}).status_code == 422
     assert client.put(path, json={'unknown': 'value'}).status_code == 422
     assert client.put('/api/sources/demo/settings', json={}).status_code == 400
     assert client.put(path, json={'api_base': ''}).status_code == 200
     assert service.sources['copy'].base == old.default_base
+    assert service.sources['copy'].domain == '国际服2'
 
 
 def test_partial_search_retains_success(tmp_path):
