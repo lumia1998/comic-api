@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>comic</title>
-  <link rel="stylesheet" href="/static/app.css?v=17">
-  <script src="/static/app.js?v=17" defer></script>
+  <link rel="stylesheet" href="/static/app.css?v=18">
+  <script src="/static/app.js?v=18" defer></script>
 </head>
 <body>
   <header>
@@ -46,7 +46,10 @@
     </section>
     <section id="library" hidden>
       <div class="section-head"><h1>我的书库</h1><button id="library-refresh" class="icon-btn" title="刷新书库" aria-label="刷新书库"><svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>
-      <label>分类<select id="library-category"><option value="*">全部分类</option></select></label>
+      <div class="library-filters">
+        <label>分类<select id="library-category"><option value="*">全部分类</option></select></label>
+        <label>筛选<input id="library-filter" placeholder="按标题或作者筛选" maxlength="100"></label>
+      </div>
       <div id="books" class="grid"></div>
     </section>
     <section id="downloads" hidden>

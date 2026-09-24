@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
@@ -58,7 +59,6 @@ def create_app(store=None, sources=None):
 
     @app.exception_handler(Exception)
     async def internal_error(request, exc):
-        import logging
         logging.getLogger(__name__).exception("Request failed: %s", request.url.path)
         return JSONResponse({"error": {"code": "internal_error", "message": "服务内部错误"}}, status_code=500)
 

@@ -1,14 +1,17 @@
-import time
-import json
-import hashlib
 import base64
+import hashlib
+import json
 import logging
 import threading
-from typing import List, Dict, Any, Tuple
+import time
+from typing import List, Dict, Any
+
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
-from src.config import Config
+
 from src.clients.base import BaseClient
+from src.config import Config
+from src.errors import ComicApiError
 
 log = logging.getLogger("comic.jm")
 
@@ -35,14 +38,6 @@ class JmClient(BaseClient):
         return unpad(decrypted, 16).decode("utf-8")
 
     def decrypt_response(self, response_data: Any, ts: int) -> Any:
-        if isinstance(response_data, bytes):
-            if len(response_data) >= 2 and response_data[0] == 0x1f and response_data[1] == 0x8b:
-                import zlib
-                try:
-                    response_data = zlib.decompress(response_data, 16 + zlib.MAX_WBITS).decode("utf-8")
-                except Exception:
-                    pass
-        
         if isinstance(response_data, bytes):
             try:
                 response_data = response_data.decode("utf-8")
@@ -88,7 +83,7 @@ class JmClient(BaseClient):
             key = self.md5_hex(Config.JM_HOSTCFG_AES_SEED)
             plain = self.decrypt_aes_ecb(normalized, key)
             parsed = json.loads(plain)
-            
+
             server_list = parsed.get("Server", [])
             if not isinstance(server_list, list) or not server_list:
                 return False
@@ -103,7 +98,7 @@ class JmClient(BaseClient):
                 try:
                     setting_url = f"{domain_url}/setting?app_img_shunt=1&t={ts_sec}"
                     token = self.md5_hex(f"{ts_sec}{Config.JM_SECRET}")
-                    
+
                     headers = {
                         "Tokenparam": f"{ts_sec},{Config.JM_VERSION}",
                         "Token": token,
@@ -160,10 +155,10 @@ class JmClient(BaseClient):
         with self._auth_lock:
             used_jwt = "" if _force_no_auth else self.jwt_token
         headers = self.get_api_headers(ts, used_jwt)
-        
+
         base_url = self.api_bases[0] if self.api_bases else Config.JM_FALLBACK_API_BASE
         url = f"{base_url}{path}"
-        
+
         kwargs = {
             "headers": headers,
             "timeout": 12,
@@ -177,34 +172,38 @@ class JmClient(BaseClient):
 
         try:
             res = self.request(method, url, **kwargs)
-            if res.status_code in (401, 403) and used_jwt and not _auth_retry:
-                retry_without_auth = False
-                with self._auth_lock:
-                    if self.jwt_token == used_jwt:
-                        self.jwt_token = ""
-                        retry_without_auth = True
-                        try:
-                            self.session.cookies.clear()
-                        except Exception:
-                            pass
-                self.host_resolved = False
-                return self.jm_request(
-                    path,
-                    method,
-                    params,
-                    data,
-                    _auth_retry=True,
-                    _force_no_auth=retry_without_auth,
-                )
-            if res.status_code < 200 or res.status_code >= 300:
-                from src.errors import ComicApiError
-                raise ComicApiError(f"图源返回 HTTP {res.status_code}", res.status_code if res.status_code in (401,403,404,429) else 502, "upstream_error", "jm")
-        except Exception as e:
-            self.host_resolved = False  # Reset on error to allow failover next time
-            raise e
+        except Exception:
+            # Only network-level failures mean the resolved host is suspect;
+            # HTTP error statuses are handled below without resetting it.
+            self.host_resolved = False
+            raise
+
+        if res.status_code in (401, 403) and used_jwt and not _auth_retry:
+            retry_without_auth = False
+            with self._auth_lock:
+                if self.jwt_token == used_jwt:
+                    self.jwt_token = ""
+                    retry_without_auth = True
+                    try:
+                        self.session.cookies.clear()
+                    except Exception:
+                        pass
+            self.host_resolved = False
+            return self.jm_request(
+                path,
+                method,
+                params,
+                data,
+                _auth_retry=True,
+                _force_no_auth=retry_without_auth,
+            )
+        if res.status_code < 200 or res.status_code >= 300:
+            raise ComicApiError(f"图源返回 HTTP {res.status_code}",
+                                res.status_code if res.status_code in (401, 403, 404, 429) else 502,
+                                "upstream_error", "jm")
 
         decrypted = self.decrypt_response(res.content, ts)
-        
+
         if isinstance(decrypted, dict) and "jwttoken" in decrypted:
             with self._auth_lock:
                 self.jwt_token = decrypted["jwttoken"]
@@ -212,11 +211,11 @@ class JmClient(BaseClient):
         return decrypted
 
     def search(self, keyword: str, page: int = 1) -> List[Dict[str, Any]]:
-        """搜索漫画 (修正：改回 GET 请求，params 传参，并加上直接 ID 检索跳转)"""
+        """搜索漫画：GET /search；第 1 页输入纯数字或 jm 前缀 ID 时直接取详情"""
         keyword_clean = keyword.strip()
         keyword_lower = keyword_clean.lower()
-        
-        # 补全细节一：如果在第 1 页输入的是纯数字（大于等于100）或 jm 开头的 ID，直接拉取详情作为搜索结果
+
+        # 第 1 页输入的是纯数字（>=100）或 jm 开头的 ID 时，直接拉取详情作为搜索结果
         if page == 1 and (keyword_clean.isdigit() and int(keyword_clean) >= 100 or keyword_lower.startswith("jm")):
             comic_id = keyword_clean[2:].strip() if keyword_lower.startswith("jm") else keyword_clean
             if comic_id:
@@ -235,123 +234,84 @@ class JmClient(BaseClient):
                 except Exception:
                     pass  # 失败了则继续正常的网络检索
 
-        try:
-            res = self.jm_request("/search", method="GET", params={
-                "search_query": keyword,
-                "page": str(page)
-            })
-            
-            # 如果是带 jm 前缀或全数字的 ID，可能触发直接加载详情结果返回
-            data = res.get("data", res)
-            if not isinstance(data, dict):
-                return []
-            
-            # TS 里的 items 实际上是 map(toComicItem)
-            # 在 /search 的返回值中，列表在 items 或是 content 字段
-            content_list = data.get("items", []) or data.get("content", [])
-            results = []
-            for item in content_list:
-                cid = str(item.get("id", ""))
-                title = item.get("name", "") or item.get("title", "")
-                if not cid or not title:
-                    continue
-                
-                # 拼接封面 URL
-                image_name = item.get("image", "")
-                if image_name.startswith("http"):
-                    cover_url = image_name
-                else:
-                    cover_url = f"{self.image_base}/media/albums/{cid}_3x4.jpg"
-                
-                results.append({
-                    "id": cid,
-                    "title": title,
-                    "cover": cover_url,
-                    "source": "jm",
-                    "author": item.get("author", ""),
-                    "category": item.get("category", {}).get("title", "") if isinstance(item.get("category"), dict) else "",
-                    "description": item.get("description", "")
-                })
-            return results
-        except Exception as e:
-            log.warning("search error", exc_info=True)
-            raise
+        res = self.jm_request("/search", method="GET", params={
+            "search_query": keyword,
+            "page": str(page)
+        })
+
+        data = res.get("data", res)
+        if not isinstance(data, dict):
+            return []
+        content_list = data.get("items", []) or data.get("content", [])
+        return self._parse_jm_comics(content_list)
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
-        """获取漫画详情 (修正：改回 GET 请求，参数 id)"""
-        try:
-            res = self.jm_request("/album", method="GET", params={"id": comic_id})
-            data = res.get("data", res)
-            if not isinstance(data, dict):
-                raise Exception("Invalid detail format")
-                
-            title = data.get("name", "")
-            description = data.get("description", "")
-            cover_url = f"{self.image_base}/media/albums/{comic_id}_3x4.jpg"
-            
-            series = data.get("series", [])
-            chapters = []
-            if not series:
-                chapters.append({
-                    "id": comic_id,
-                    "name": "第1话 开始阅读",
-                    "order": 1
-                })
-            else:
-                for idx, ep in enumerate(series):
-                    ch_id = str(ep.get("id", ""))
-                    if not ch_id:
-                        continue
-                    ch_title = ep.get("name") or ep.get("title") or f"第{ep.get('sort', idx+1)}话"
-                    chapters.append({
-                        "id": ch_id,
-                        "name": ch_title,
-                        "order": idx + 1
-                    })
-                    
-            return {
+        """获取漫画详情"""
+        res = self.jm_request("/album", method="GET", params={"id": comic_id})
+        data = res.get("data", res)
+        if not isinstance(data, dict):
+            raise ComicApiError("禁漫详情格式无效", 502, "invalid_response", "jm")
+
+        title = data.get("name", "")
+        description = data.get("description", "")
+        cover_url = f"{self.image_base}/media/albums/{comic_id}_3x4.jpg"
+
+        series = data.get("series", [])
+        chapters = []
+        if not series:
+            chapters.append({
                 "id": comic_id,
-                "title": title,
-                "cover": cover_url,
-                "description": description,
-                "author": "/".join(data.get("author", [])) if isinstance(data.get("author"), list) else data.get("author", ""),
-                "chapters": chapters,
-                "source": "jm"
-            }
-        except Exception as e:
-            log.warning("get_comic_detail error", exc_info=True)
-            raise
+                "name": "第1话 开始阅读",
+                "order": 1
+            })
+        else:
+            for idx, ep in enumerate(series):
+                ch_id = str(ep.get("id", ""))
+                if not ch_id:
+                    continue
+                ch_title = ep.get("name") or ep.get("title") or f"第{ep.get('sort', idx + 1)}话"
+                chapters.append({
+                    "id": ch_id,
+                    "name": ch_title,
+                    "order": idx + 1
+                })
+
+        return {
+            "id": comic_id,
+            "title": title,
+            "cover": cover_url,
+            "description": description,
+            "author": "/".join(data.get("author", [])) if isinstance(data.get("author"), list) else data.get("author", ""),
+            "chapters": chapters,
+            "source": "jm"
+        }
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
-        """获取章节的所有图片链接 (修正：改回 GET 请求 /chapter, 参数 id)"""
-        try:
-            res = self.jm_request("/chapter", method="GET", params={"id": chapter_id, "skip": ""})
-            data = res.get("data", res)
-            if not isinstance(data, dict):
-                return []
-                
-            images = data.get("images", [])
-            image_urls = []
-            
-            for img in images:
-                if isinstance(img, str):
-                    img_name = img
-                elif isinstance(img, dict):
-                    img_name = img.get("path", "") or img.get("url", "")
-                else:
-                    continue
-                
-                if not img_name:
-                    continue
-                    
-                if img_name.startswith("http"):
-                    image_urls.append(img_name)
-                else:
-                    image_urls.append(f"{self.image_base}/media/photos/{chapter_id}/{img_name}")
-            return image_urls
-        except Exception as e:
-            log.warning("get_chapter_images error", exc_info=True)
-            raise
+        """获取章节的所有图片链接"""
+        res = self.jm_request("/chapter", method="GET", params={"id": chapter_id, "skip": ""})
+        data = res.get("data", res)
+        if not isinstance(data, dict):
+            return []
+
+        images = data.get("images", [])
+        image_urls = []
+
+        for img in images:
+            if isinstance(img, str):
+                img_name = img
+            elif isinstance(img, dict):
+                img_name = img.get("path", "") or img.get("url", "")
+            else:
+                continue
+
+            if not img_name:
+                continue
+
+            if img_name.startswith("http"):
+                image_urls.append(img_name)
+            else:
+                image_urls.append(f"{self.image_base}/media/photos/{chapter_id}/{img_name}")
+        return image_urls
 
     def _parse_jm_comics(self, content_list: list) -> List[Dict[str, Any]]:
         """辅助解析禁漫返回的漫画列表"""
@@ -368,7 +328,7 @@ class JmClient(BaseClient):
                 cover_url = image_name
             else:
                 cover_url = f"{self.image_base}/media/albums/{cid}_3x4.jpg"
-            
+
             results.append({
                 "id": cid,
                 "title": title,
@@ -382,70 +342,48 @@ class JmClient(BaseClient):
 
     def get_recommend(self) -> List[Dict[str, Any]]:
         """获取推荐/热门推荐"""
-        try:
-            res = self.jm_request("/promote", method="GET", params={"page": "0"})
-            # promote 接口返回通常是一个 section 数组，我们提取第一个 section 里的 content 作为本子
-            if isinstance(res, list) and res:
-                first_section = res[0]
-                content = first_section.get("content", [])
-                return self._parse_jm_comics(content)
-            return []
-        except Exception as e:
-            log.warning("get_recommend error", exc_info=True)
-            raise
+        res = self.jm_request("/promote", method="GET", params={"page": "0"})
+        # promote 接口返回通常是一个 section 数组，提取第一个 section 里的 content 作为本子
+        if isinstance(res, list) and res:
+            return self._parse_jm_comics(res[0].get("content", []))
+        return []
 
     def get_latest(self, page: int = 1) -> List[Dict[str, Any]]:
         """获取最新更新本子"""
-        try:
-            res = self.jm_request("/latest", method="GET", params={"page": str(page - 1)})
-            if isinstance(res, dict):
-                res = res.get("content", [])
-            return self._parse_jm_comics(res)
-        except Exception as e:
-            log.warning("get_latest error", exc_info=True)
-            raise
+        res = self.jm_request("/latest", method="GET", params={"page": str(page - 1)})
+        if isinstance(res, dict):
+            res = res.get("content", [])
+        return self._parse_jm_comics(res)
 
     def get_leaderboard(self, mode: str = "day", page: int = 1) -> List[Dict[str, Any]]:
         """获取排行榜 (day/week/month/total)"""
         # order 映射：mv_t(日), mv_w(周), mv_m(月), mv(总)
-        order_map = {"day": "mv_t", "week": "mv_w", "month": "mv_m", "total": "mv"}
-        order = order_map.get(mode, "mv_t")
-        try:
-            res = self.jm_request("/categories/filter", method="GET", params={
-                "page": str(page - 1),
-                "c": "",
-                "o": order
-            })
-            content = res.get("content", [])
-            return self._parse_jm_comics(content)
-        except Exception as e:
-            log.warning("get_leaderboard error", exc_info=True)
-            raise
+        order = {"day": "mv_t", "week": "mv_w", "month": "mv_m", "total": "mv"}.get(mode, "mv_t")
+        res = self.jm_request("/categories/filter", method="GET", params={
+            "page": str(page - 1),
+            "c": "",
+            "o": order
+        })
+        return self._parse_jm_comics(res.get("content", []))
 
     def get_category_comics(self, category_name: str, page: int = 1, sort: str = "new") -> List[Dict[str, Any]]:
         """
         分类过滤 (同人/单本/短篇/韩漫 等)
         sort: new=最新, mv=最多观看, tf=最多收藏(喜欢), mp=最多指名
         """
-        # 映射统一的 sort 关键词到 JM 的 o 参数
         order_map = {
             "new": "new",   # 最新上架
             "dd": "new",    # bika 别名兼容
-            "mv": "mv",    # 最多观看
-            "vd": "mv",    # bika 别名兼容
-            "tf": "tf",    # 最多收藏/喜欢
-            "ld": "tf",    # bika 别名兼容
-            "mp": "mp",    # 最多指名
+            "mv": "mv",     # 最多观看
+            "vd": "mv",     # bika 别名兼容
+            "tf": "tf",     # 最多收藏/喜欢
+            "ld": "tf",     # bika 别名兼容
+            "mp": "mp",     # 最多指名
         }
         order = order_map.get(sort, "new")
-        try:
-            res = self.jm_request("/categories/filter", method="GET", params={
-                "page": str(page - 1),
-                "c": category_name,
-                "o": order
-            })
-            content = res.get("content", [])
-            return self._parse_jm_comics(content)
-        except Exception as e:
-            log.warning("get_category_comics error", exc_info=True)
-            raise
+        res = self.jm_request("/categories/filter", method="GET", params={
+            "page": str(page - 1),
+            "c": category_name,
+            "o": order
+        })
+        return self._parse_jm_comics(res.get("content", []))

@@ -92,11 +92,11 @@ class Store:
         with self.connect() as db:
             db.execute("INSERT INTO accounts VALUES (?,?) ON CONFLICT(source) DO UPDATE SET secret=excluded.secret", (source, secret))
 
-    def books(self, category=None):
+    def books(self):
         with self.connect() as db:
             rows = db.execute("SELECT * FROM library ORDER BY updated_at DESC").fetchall()
         return [dict(json.loads(r["metadata"]), source=r["source"], id=r["comic_id"], library_category=r["category"], updated_at=r["updated_at"])
-                for r in rows if category is None or r["category"] == category]
+                for r in rows]
 
     def save_book(self, source, comic_id, metadata, category=""):
         with self.connect() as db:

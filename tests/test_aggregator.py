@@ -7,8 +7,8 @@ import pytest
 from PIL import Image
 
 
-from src.services.aggregator import AggregatorService
-from src.services.aggregator import ComicApiError
+from src.services.aggregator import AggregatorService, ComicApiError
+from src.services import pdf as pdf_service
 from src.services.images import jm_image_filename, jm_scramble_num, descramble_jm_image
 
 
@@ -79,11 +79,10 @@ def test_descramble_jm_image_restores_reordered_slices():
 
 def test_encrypt_pdf_requires_password_when_pypdf_is_installed(tmp_path):
     pypdf = pytest.importorskip("pypdf")
-    service = AggregatorService.__new__(AggregatorService)
     pdf_path = tmp_path / "chapter.pdf"
     Image.new("RGB", (16, 16), "white").save(pdf_path, "PDF")
 
-    service._encrypt_pdf(str(pdf_path), "123456")
+    pdf_service._encrypt_pdf(str(pdf_path), "123456")
 
     reader = pypdf.PdfReader(str(pdf_path))
     assert reader.is_encrypted
@@ -92,7 +91,6 @@ def test_encrypt_pdf_requires_password_when_pypdf_is_installed(tmp_path):
 
 
 def test_create_compressed_pdf_uses_scale_fallback_until_under_limit(monkeypatch, tmp_path):
-    service = AggregatorService.__new__(AggregatorService)
     image_path = tmp_path / "0001.png"
     image_path.write_bytes(b"image")
     pdf_path = tmp_path / "chapter.pdf"
@@ -104,9 +102,9 @@ def test_create_compressed_pdf_uses_scale_fallback_until_under_limit(monkeypatch
             return b"ok"
         return b"too-large"
 
-    monkeypatch.setattr(service, "_make_pdf_bytes", fake_make_pdf_bytes)
+    monkeypatch.setattr(pdf_service, "_make_pdf_bytes", fake_make_pdf_bytes)
 
-    service._create_compressed_pdf([str(image_path)], str(pdf_path), limit_bytes=3)
+    pdf_service._create_compressed_pdf([str(image_path)], str(pdf_path), limit_bytes=3)
 
     assert pdf_path.read_bytes() == b"ok"
     assert (20, 1.0) in attempts

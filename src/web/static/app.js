@@ -6,7 +6,7 @@ const enc = encodeURIComponent;
 const statuses = {queued:'排队中',running:'执行中',cancelling:'正在取消',cancelled:'已取消',failed:'失败',completed:'已完成',fetching:'获取章节',downloading:'下载图片',packaging:'打包 PDF',interrupted:'重启中断'};
 function node(tag, text, className) {const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n;}
 function button(text, action, className) {const n=node('button',text,className);n.type='button';n.onclick=()=>run(action,n);return n;}
-const icons={star:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>','book-open':'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>','refresh-cw':'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',tag:'<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/>','trash-2':'<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',key:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',unlink:'<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/>','arrow-left':'<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',copy:'<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'};
+const icons={star:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>','book-open':'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>','refresh-cw':'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',tag:'<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/>','trash-2':'<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',key:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',unlink:'<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/>',copy:'<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'};
 const svgIcon=name=>`<svg viewBox="0 0 24 24">${icons[name]}</svg>`;
 function iconBtn(name, label, action, className) {const n=node('button',undefined,(className?className+' ':'')+'icon-btn');n.type='button';n.title=label;n.setAttribute('aria-label',label);n.innerHTML=svgIcon(name);n.onclick=()=>run(action,n);return n;}
 function iconLink(name, label, href) {const n=node('a',undefined,'icon-btn');n.title=label;n.setAttribute('aria-label',label);n.innerHTML=svgIcon(name);n.href=href;return n;}
@@ -22,6 +22,8 @@ function saveLocal(key,value) {try{localStorage.setItem(key,JSON.stringify(value
 function progressKey(b,chapter) {return 'comic:progress:'+JSON.stringify([b.source,b.id,chapter]);}
 function lastKey(b) {return 'comic:last:'+JSON.stringify([b.source,b.id]);}
 function safeImage(url) {try {const u=new URL(url,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}}
+// Route upstream covers through the image proxy so no direct request leaks to the CDN.
+function coverFor(item) {const url=safeImage(item.cover);if(!url)return '';if(url.startsWith(location.origin)||url.startsWith('/'))return url;return `/api/image/proxy?${new URLSearchParams({source:item.source,url})}`;}
 function image(url, alt, className) {const n=node('img',undefined,className);n.alt=alt;n.loading='lazy';const safe=safeImage(url);if(safe)n.src=safe;n.onerror=()=>{n.removeAttribute('src');n.alt='封面暂不可用';};return n;}
 
 async function loadSources() {
@@ -91,7 +93,7 @@ function renderCards(container, items, library=false) {
   if(!items.length){container.append(node('p','暂无漫画','empty'));return;}
   for(const item of items){
     const card=node('article',undefined,'card');const open=button('',()=>openComic(item),'card-open');
-    open.append(image(item.cover,item.title,'cover'));
+    open.append(image(coverFor(item),item.title,'cover'));
     const info=node('div',undefined,'card-info');info.append(node('span',sourceName(item.source),'badge'),node('h3',item.title),node('p',item.author||'佚名'));
     const last=readLocal(lastKey(item));if(last)info.append(node('p',`本机读至 ${last.chapterName} · 第 ${last.index+1} 页`));
     if(library)info.append(node('p',`${item.library_category||'未分类'} · ${item.chapters?.length||0} 章`));
@@ -118,23 +120,42 @@ async function browse(event) {
   }catch(e){if(request===state.browseRequest&&e.name!=='AbortError')$('browse-status').textContent=e.message;}
 }
 async function loadLibrary() {const data=await api('/api/library');state.books=data.items;options($('library-category'),[{value:'*',label:'全部分类'},{value:'',label:'未分类'},...data.categories.map(v=>({value:v,label:v}))],$('library-category').value);filterBooks();}
-function filterBooks(){const category=$('library-category').value;renderCards($('books'),state.books.filter(b=>category==='*'||b.library_category===category),true);}
+function filterBooks(){const category=$('library-category').value,needle=($('library-filter').value||'').trim().toLowerCase();
+  renderCards($('books'),state.books.filter(b=>(category==='*'||b.library_category===category)&&(!needle||(b.title||'').toLowerCase().includes(needle)||(b.author||'').toLowerCase().includes(needle))),true);}
 async function openComic(item) {
   const request=++state.detailRequest;state.detail=null;$('detail-title').textContent=item.title||'漫画详情';$('detail-body').textContent='正在加载…';if(!$('detail-dialog').open)$('detail-dialog').showModal();
   try{const detail=await api(`/api/comic/${enc(item.source)}/${enc(item.id)}`);if(request!==state.detailRequest)return;state.detail=detail;renderDetail();}
   catch(e){if(request===state.detailRequest){if(item.chapters){state.detail=item;renderDetail();$('detail-body').prepend(node('p','图源不可用，显示书库缓存：'+e.message,'error'));}else $('detail-body').textContent=e.message;}}
 }
+const CHAPTER_PAGE=60;
+function chapterRow(detail,chapter){const row=node('div',undefined,'chapter');row.tabIndex=0;row.role='button';const progress=readLocal(progressKey(detail,String(chapter.id)));row.append(node('span',chapter.name+(progress?` · 本机第 ${progress.index+1} 页`:'')),iconBtn('download','下载 PDF',()=>queueDownload(detail,chapter)));row.onclick=event=>{if(event.target.closest('button,a'))return;openReader(String(chapter.id));};row.onkeydown=event=>{if(event.key==='Enter'&&event.target===row)openReader(String(chapter.id));};return row;}
+// Chapters render in chunks so books with hundreds of episodes stay responsive.
+function drawChapters(reset){
+  const detail=state.detail;if(!detail)return;
+  const chapters=detail.chapters||[];
+  let list=$('chapter-list');
+  if(!list){list=node('div',undefined,'chapter-list');list.id='chapter-list';$('detail-body').append(list);}
+  if(reset){state.chapterView={shown:CHAPTER_PAGE,needle:$('chapter-filter').value.trim().toLowerCase()};list.replaceChildren();}
+  const view=state.chapterView;
+  const matched=chapters.filter(c=>!view.needle||(c.name||'').toLowerCase().includes(view.needle));
+  list.querySelector('.more-row')?.remove();
+  for(const chapter of matched.slice(list.children.length,view.shown))list.append(chapterRow(detail,chapter));
+  if(!matched.length)list.append(node('p','没有匹配的章节','empty'));
+  else if(matched.length>list.children.length){const more=node('div',undefined,'more-row');const btn=button(`显示更多（还有 ${matched.length-list.children.length} 章）`,()=>{view.shown+=CHAPTER_PAGE;drawChapters();});more.append(btn);list.append(more);}
+}
 function renderDetail() {
-  const detail=state.detail,body=$('detail-body');$('detail-title').textContent=detail.title;body.replaceChildren();
-  const cover=node('div',undefined,'cover-wrap');cover.append(image(detail.cover,detail.title),node('p',`共 ${detail.chapters.length} 章`,'cover-count'));const summary=node('div',undefined,'detail-summary');summary.append(cover);const text=node('div',undefined,'detail-text');text.append(node('p',`${sourceName(detail.source)} · ${detail.author||'佚名'}`),node('p',detail.description||'暂无简介'));summary.append(text);body.append(summary);
+  const detail=state.detail,body=$('detail-body');detail.chapters=detail.chapters||[];$('detail-title').textContent=detail.title;body.replaceChildren();
+  const cover=node('div',undefined,'cover-wrap');cover.append(image(coverFor(detail),detail.title),node('p',`共 ${detail.chapters.length} 章`,'cover-count'));const summary=node('div',undefined,'detail-summary');summary.append(cover);const text=node('div',undefined,'detail-text');text.append(node('p',`${sourceName(detail.source)} · ${detail.author||'佚名'}`),node('p',detail.description||'暂无简介'));summary.append(text);body.append(summary);
   const controls=node('div',undefined,'actions');
   controls.append(iconBtn('star','收藏到书库',async()=>{const existing=state.books.find(b=>b.source===detail.source&&b.id===detail.id);const category=prompt('收藏分类（可留空）',existing?.library_category||'');if(category===null)return;await api(bookPath(detail),write('PUT',{category}));toast('已加入书库');await loadLibrary();},'primary'));
   const last=readLocal(lastKey(detail));if(last&&detail.chapters.some(c=>String(c.id)===last.chapterId))controls.append(iconBtn('book-open',`继续阅读 · ${last.chapterName}`,()=>openReader(last.chapterId)));
+  if(detail.chapters.length)controls.append(iconBtn('download','下载全部章节',()=>downloadAll(detail)));
   text.append(controls);
   const filter=$('chapter-filter');filter.value='';filter.hidden=detail.chapters.length<=15;
-  for(const chapter of detail.chapters){const row=node('div',undefined,'chapter');row.tabIndex=0;row.role='button';const progress=readLocal(progressKey(detail,String(chapter.id)));row.append(node('span',chapter.name+(progress?` · 本机第 ${progress.index+1} 页`:'')),iconBtn('download','下载 PDF',()=>queueDownload(detail,chapter)));row.onclick=event=>{if(event.target.closest('button,a'))return;openReader(String(chapter.id));};row.onkeydown=event=>{if(event.key==='Enter'&&event.target===row)openReader(String(chapter.id));};body.append(row);}
+  drawChapters(true);
 }
 async function queueDownload(detail,chapter){await api('/api/downloads',write('POST',{source:detail.source,comic_id:String(detail.id),chapter_id:String(chapter.id),title:detail.title,chapter:chapter.name}));toast('已加入下载任务，可在任务中心查看');}
+async function downloadAll(detail){if(!confirm(`将《${detail.title}》全部 ${detail.chapters.length} 章加入下载队列？`))return;let queued=0,failed=0;for(const chapter of detail.chapters){try{await api('/api/downloads',write('POST',{source:detail.source,comic_id:String(detail.id),chapter_id:String(chapter.id),title:detail.title,chapter:chapter.name}));queued++;}catch{failed++;}}toast(`已加入 ${queued} 个任务${failed?`，${failed} 个失败（队列可能已满）`:''}`);}
 async function loadTasks(){
   const {tasks}=await api('/api/downloads');$('tasks').replaceChildren();if(!tasks.length)$('tasks').append(node('p','尚无下载任务。在章节列表中选择下载 PDF。','empty'));
   for(const task of tasks){const card=node('article',undefined,'task');card.append(node('h3',`${task.title||task.comic_id} · ${task.chapter||task.chapter_id}`),node('p',`${sourceName(task.source)} · ${statuses[task.status]} · ${statuses[task.stage]||task.stage} · ${task.completed}/${task.total} 张`));
@@ -173,7 +194,7 @@ function configureAccount(){
 
 function saveProgress(){const r=state.reader;if(!r||!r.images.length)return;const value={chapterId:r.chapterId,chapterName:r.chapterName,index:r.index,updatedAt:Date.now()};saveLocal(progressKey(r.book,r.chapterId),value);saveLocal(lastKey(r.book),value);}
 async function openReader(chapterId,startAt){
-  saveProgress();const book=state.detail,chapter=book.chapters.find(c=>String(c.id)===chapterId);if(!chapter)return;
+  saveProgress();const book=state.detail;book.chapters=book.chapters||[];const chapter=book.chapters.find(c=>String(c.id)===chapterId);if(!chapter)return;
   const request=++state.readerRequest;state.readerAbort?.abort();state.readerAbort=new AbortController();state.reader=null;
   $('reader-title').textContent=`${book.title} · ${chapter.name}`;$('reader-pages').textContent='正在获取章节…';$('page-status').textContent='';
   $('reader-dialog').classList.add('ui-open','ui-pinned');
@@ -214,9 +235,9 @@ document.querySelectorAll('[data-tab]').forEach(n=>n.onclick=()=>showTab(n.datas
 document.querySelectorAll('[data-close]').forEach(n=>n.onclick=()=>{if(n.dataset.close==='detail-dialog')++state.detailRequest;$(n.dataset.close).close();});
 // Click on the dialog backdrop (outside its content) closes it, same as the close button.
 document.querySelectorAll('dialog:not(#reader-dialog)').forEach(dlg=>dlg.addEventListener('click',event=>{if(event.target!==dlg)return;if(dlg.id==='detail-dialog')++state.detailRequest;dlg.close();}));
-$('chapter-filter').oninput=event=>{const needle=event.target.value.trim().toLowerCase();document.querySelectorAll('#detail-body .chapter').forEach(row=>{row.hidden=!!needle&&!row.querySelector('span').textContent.toLowerCase().includes(needle);});};
+$('chapter-filter').oninput=()=>drawChapters(true);
 $('browse-form').onsubmit=browse;
-$('library-refresh').onclick=()=>run(loadLibrary);$('library-category').onchange=filterBooks;$('tasks-refresh').onclick=()=>run(loadTasks);
+$('library-refresh').onclick=()=>run(loadLibrary);$('library-category').onchange=filterBooks;$('library-filter').oninput=filterBooks;$('tasks-refresh').onclick=()=>run(loadTasks);
 $('accounts').onclick=()=>run(async()=>{await loadSources();$('account-dialog').showModal();});
 $('login-form').onsubmit=event=>{event.preventDefault();const source=state.settingsSource;run(async()=>{await api(`/api/sources/${enc(source)}/login`,write('POST',Object.fromEntries(new FormData(event.target))));await loadSources();configureAccount();toast('图源账号已保存');},event.submitter);};
 $('reader-close').onclick=closeReader;$('reader-dialog').addEventListener('cancel',event=>{event.preventDefault();closeReader();});

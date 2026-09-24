@@ -1,5 +1,4 @@
 import random
-import uuid
 import threading
 from src.errors import ComicApiError
 try:

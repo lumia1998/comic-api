@@ -1,20 +1,19 @@
-import time
-import os
-import logging
-from pathlib import Path
-import uuid
-import hmac
 import hashlib
+import hmac
 import json
 import math
+import os
 import threading
+import time
+import uuid
+from pathlib import Path
 from typing import List, Dict, Any
 from urllib.parse import urlparse, urlencode
-from src.config import Config
+
 from src.clients.base import BaseClient
+from src.config import Config
 from src.errors import ComicApiError
 
-log = logging.getLogger("comic.bika")
 
 class BikaClient(BaseClient):
     def __init__(self, store=None):
@@ -87,7 +86,6 @@ class BikaClient(BaseClient):
                 return
 
             if not self._credentials_available():
-                from src.errors import ComicApiError
                 raise ComicApiError("请先绑定图源账号", 401, "login_required", "bika")
 
             self._login_locked(self._account, self._password)
@@ -110,8 +108,7 @@ class BikaClient(BaseClient):
         """
         raw = f"{path}{timestamp}{nonce}{method}{Config.BIKA_API_KEY}".lower()
         secret = Config.BIKA_SECRET_KEY.encode("utf-8")
-        signature = hmac.new(secret, raw.encode("utf-8"), hashlib.sha256).hexdigest()
-        return signature
+        return hmac.new(secret, raw.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def _send_bika_request(
         self,
@@ -122,8 +119,8 @@ class BikaClient(BaseClient):
         authorization: str = "",
     ):
         url = f"{self.api_base}{path}"
-        
-        # 核心修复：如果存在 params，必须将其拼接到签名 path 的尾部！
+
+        # 如果存在 params，必须将其拼接到签名 path 的尾部
         sign_path = path
         if params:
             query_str = urlencode(params)
@@ -131,12 +128,12 @@ class BikaClient(BaseClient):
                 sign_path = f"{path}?{query_str}"
 
         cleaned_path = self.clean_path(sign_path)
-        
+
         timestamp = int(time.time())
         nonce = uuid.uuid4().hex
-        
+
         signature = self.create_signature(cleaned_path, timestamp, nonce, method)
-        
+
         headers = {
             "api-key": Config.BIKA_API_KEY,
             "accept": "application/vnd.picacomic.com.v1+json",
@@ -152,20 +149,20 @@ class BikaClient(BaseClient):
             "content-type": "application/json; charset=UTF-8",
             "image-quality": "original"
         }
-        
+
         if authorization:
             headers["authorization"] = authorization
-            
+
         kwargs = {
             "headers": headers,
             "timeout": 15
         }
         if params:
             kwargs["params"] = params
-            
+
         if json_body is not None:
             kwargs["data"] = json.dumps(json_body).encode("utf-8")
-            
+
         return self.request(method, url, **kwargs)
 
     @staticmethod
@@ -187,8 +184,8 @@ class BikaClient(BaseClient):
             authorization="",
         )
         if res.status_code < 200 or res.status_code >= 300:
-            err_msg = self._response_error(res)
-            raise ComicApiError("图源登录失败，请检查账号或稍后重试", 401 if res.status_code in (400, 401) else 502, "login_failed", "bika")
+            raise ComicApiError("图源登录失败，请检查账号或稍后重试",
+                                401 if res.status_code in (400, 401) else 502, "login_failed", "bika")
 
         token = res.json().get("data", {}).get("token", "")
         if not token:
@@ -241,7 +238,9 @@ class BikaClient(BaseClient):
                     with self._auth_lock:
                         self._clear_authorization_locked(used_token)
 
-            raise ComicApiError(f"图源返回 HTTP {res.status_code}", res.status_code if res.status_code in (401,403,404,429) else 502, "login_required" if res.status_code == 401 else "upstream_error", "bika")
+            raise ComicApiError(f"图源返回 HTTP {res.status_code}",
+                                res.status_code if res.status_code in (401, 403, 404, 429) else 502,
+                                "login_required" if res.status_code == 401 else "upstream_error", "bika")
 
         return res.json()
 
@@ -249,142 +248,99 @@ class BikaClient(BaseClient):
         """登录哔咔"""
         account = account.strip()
         if not account or not password:
-            raise Exception("哔咔账号和密码不能为空。")
+            raise ComicApiError("哔咔账号和密码不能为空", 422, "invalid_request", "bika")
         with self._auth_lock:
             return self._login_locked(account, password)
 
     def search(self, keyword: str, page: int = 1) -> List[Dict[str, Any]]:
         """搜索漫画"""
         self.ensure_authenticated()
-            
-        try:
-            res = self.bika_request("comics/advanced-search", method="POST", params={
-                "page": str(page)
-            }, json_body={
-                "keyword": keyword,
-                "sort": "dd",
-                "categories": []
-            })
-            
-            data = res.get("data", {})
-            comics = data.get("comics", {})
-            docs = comics.get("docs", []) if isinstance(comics, dict) else (comics if isinstance(comics, list) else [])
-            
-            results = []
-            for item in docs:
-                cid = str(item.get("_id", "") or item.get("id", ""))
-                title = item.get("title", "")
-                if not cid or not title:
-                    continue
-                
-                cover = item.get("thumb", {})
-                cover_url = ""
-                if isinstance(cover, dict):
-                    cover_url = f"{cover.get('fileServer', '')}/static/{cover.get('path', '')}"
-                
-                results.append({
-                    "id": cid,
-                    "title": title,
-                    "cover": cover_url,
-                    "source": "bika",
-                    "author": item.get("author", ""),
-                    "category": " · ".join(item.get("categories", [])) if isinstance(item.get("categories"), list) else "",
-                    "description": item.get("description", "")
-                })
-            return results
-        except Exception as e:
-            log.warning("search error", exc_info=True)
-            raise
+        res = self.bika_request("comics/advanced-search", method="POST", params={
+            "page": str(page)
+        }, json_body={
+            "keyword": keyword,
+            "sort": "dd",
+            "categories": []
+        })
+        return self._parse_comics_list(res)
 
     def get_comic_detail(self, comic_id: str) -> Dict[str, Any]:
         """获取详情并加载全部章节分页"""
         self.ensure_authenticated()
-            
-        try:
-            res = self.bika_request(f"comics/{comic_id}", method="GET")
-            data = res.get("data", {}).get("comic", {})
-            title = data.get("title", "")
-            description = data.get("description", "")
-            
-            cover = data.get("thumb", {})
-            cover_url = ""
-            if isinstance(cover, dict):
-                cover_url = f"{cover.get('fileServer', '')}/static/{cover.get('path', '')}"
-                
-            eps_count = int(data.get("epsCount", 0))
-            total_pages = max(1, math.ceil(eps_count / 40))
-            
-            eps_docs = []
-            for page in range(1, total_pages + 1):
-                try:
-                    eps_res = self.bika_request(f"comics/{comic_id}/eps", method="GET", params={"page": str(page)})
-                    eps_docs.extend(eps_res.get("data", {}).get("eps", {}).get("docs", []))
-                except Exception:
-                    raise
-            
-            chapters = []
-            for idx, doc in enumerate(eps_docs):
-                ch_id = str(doc.get("order", ""))
-                if not ch_id:
-                    continue
-                ch_name = doc.get("title") or doc.get("name") or f"第{doc.get('order', idx+1)}话"
-                chapters.append({
-                    "id": ch_id,
-                    "name": ch_name,
-                    "order": int(ch_id)
-                })
-                
-            chapters.sort(key=lambda x: x["order"])
-            
-            return {
-                "id": comic_id,
-                "title": title,
-                "cover": cover_url,
-                "description": description,
-                "author": data.get("author", ""),
-                "chapters": chapters,
-                "source": "bika"
-            }
-        except Exception as e:
-            log.warning("get_comic_detail error", exc_info=True)
-            raise
+        res = self.bika_request(f"comics/{comic_id}", method="GET")
+        data = res.get("data", {}).get("comic", {})
+        title = data.get("title", "")
+        description = data.get("description", "")
+
+        cover = data.get("thumb", {})
+        cover_url = ""
+        if isinstance(cover, dict):
+            cover_url = f"{cover.get('fileServer', '')}/static/{cover.get('path', '')}"
+
+        eps_count = int(data.get("epsCount", 0))
+        total_pages = max(1, math.ceil(eps_count / 40))
+
+        eps_docs = []
+        for page in range(1, total_pages + 1):
+            eps_res = self.bika_request(f"comics/{comic_id}/eps", method="GET", params={"page": str(page)})
+            eps_docs.extend(eps_res.get("data", {}).get("eps", {}).get("docs", []))
+
+        chapters = []
+        for idx, doc in enumerate(eps_docs):
+            ch_id = str(doc.get("order", ""))
+            if not ch_id:
+                continue
+            ch_name = doc.get("title") or doc.get("name") or f"第{doc.get('order', idx + 1)}话"
+            chapters.append({
+                "id": ch_id,
+                "name": ch_name,
+                "order": int(ch_id)
+            })
+
+        chapters.sort(key=lambda x: x["order"])
+
+        return {
+            "id": comic_id,
+            "title": title,
+            "cover": cover_url,
+            "description": description,
+            "author": data.get("author", ""),
+            "chapters": chapters,
+            "source": "bika"
+        }
 
     def get_chapter_images(self, comic_id: str, chapter_id: str) -> List[str]:
         """获取章节页面图片"""
         self.ensure_authenticated()
-            
-        try:
-            image_urls = []
-            page = 1
-            total_pages = 1
-            
-            while page <= total_pages:
-                res = self.bika_request(f"comics/{comic_id}/order/{chapter_id}/pages", method="GET", params={"page": str(page)})
-                data = res.get("data", {})
-                pages_meta = data.get("pages", {})
-                
-                total_pages = int(pages_meta.get("pages", 1))
-                docs = pages_meta.get("docs", [])
-                
-                for doc in docs:
-                    media = doc.get("media", {})
-                    if isinstance(media, dict):
-                        img_url = f"{media.get('fileServer', '')}/static/{media.get('path', '')}"
-                        image_urls.append(img_url)
-                
-                page += 1
-                
-            return image_urls
-        except Exception as e:
-            log.warning("get_chapter_images error", exc_info=True)
-            raise
+        image_urls = []
+        page = 1
+        total_pages = 1
+
+        while page <= total_pages:
+            res = self.bika_request(f"comics/{comic_id}/order/{chapter_id}/pages", method="GET",
+                                    params={"page": str(page)})
+            data = res.get("data", {})
+            pages_meta = data.get("pages", {})
+
+            total_pages = int(pages_meta.get("pages", 1))
+            docs = pages_meta.get("docs", [])
+
+            for doc in docs:
+                media = doc.get("media", {})
+                if isinstance(media, dict):
+                    img_url = f"{media.get('fileServer', '')}/static/{media.get('path', '')}"
+                    image_urls.append(img_url)
+
+            page += 1
+
+        return image_urls
 
     def _parse_comics_list(self, raw_res: dict) -> List[Dict[str, Any]]:
         """内部辅助解析哔咔返回的漫画数组"""
         data = raw_res.get("data", {})
         comics = data.get("comics", {})
         docs = comics.get("docs", []) if isinstance(comics, dict) else (comics if isinstance(comics, list) else [])
-        
+
         results = []
         for item in docs:
             cid = str(item.get("_id", "") or item.get("id", ""))
@@ -408,52 +364,33 @@ class BikaClient(BaseClient):
 
     def get_random(self) -> List[Dict[str, Any]]:
         """获取随机本子"""
-        try:
-            self.ensure_authenticated()
-            res = self.bika_request("comics/random", method="GET")
-            return self._parse_comics_list(res)
-        except Exception as e:
-            log.warning("get_random error", exc_info=True)
-            raise
+        self.ensure_authenticated()
+        res = self.bika_request("comics/random", method="GET")
+        return self._parse_comics_list(res)
 
     def get_leaderboard(self, mode: str = "day") -> List[Dict[str, Any]]:
         """获取排行榜 (day/week/month)"""
-        days_map = {"day": "H24", "week": "D7", "month": "D30"}
-        days = days_map.get(mode, "H24")
-        try:
-            self.ensure_authenticated()
-            res = self.bika_request("comics/leaderboard", method="GET", params={"tt": days, "ct": "VC"})
-            return self._parse_comics_list(res)
-        except Exception as e:
-            log.warning("get_leaderboard error", exc_info=True)
-            raise
+        days = {"day": "H24", "week": "D7", "month": "D30"}.get(mode, "H24")
+        self.ensure_authenticated()
+        res = self.bika_request("comics/leaderboard", method="GET", params={"tt": days, "ct": "VC"})
+        return self._parse_comics_list(res)
 
     def get_category_comics(self, category_name: str, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
         """
         筛选分类下的本子
         sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看
         """
-        valid_sorts = {"dd", "da", "ld", "vd"}
-        s = sort if sort in valid_sorts else "dd"
-        try:
-            self.ensure_authenticated()
-            res = self.bika_request("comics", method="GET", params={"page": str(page), "c": category_name, "s": s})
-            return self._parse_comics_list(res)
-        except Exception as e:
-            log.warning("get_category_comics error", exc_info=True)
-            raise
+        s = sort if sort in {"dd", "da", "ld", "vd"} else "dd"
+        self.ensure_authenticated()
+        res = self.bika_request("comics", method="GET", params={"page": str(page), "c": category_name, "s": s})
+        return self._parse_comics_list(res)
 
     def get_latest(self, page: int = 1, sort: str = "dd") -> List[Dict[str, Any]]:
         """
         获取本子列表（支持排序）
         sort: dd=最新, da=最旧, ld=最多喜欢, vd=最多观看
         """
-        valid_sorts = {"dd", "da", "ld", "vd"}
-        s = sort if sort in valid_sorts else "dd"
-        try:
-            self.ensure_authenticated()
-            res = self.bika_request("comics", method="GET", params={"page": str(page), "s": s})
-            return self._parse_comics_list(res)
-        except Exception as e:
-            log.warning("get_latest error", exc_info=True)
-            raise
+        s = sort if sort in {"dd", "da", "ld", "vd"} else "dd"
+        self.ensure_authenticated()
+        res = self.bika_request("comics", method="GET", params={"page": str(page), "s": s})
+        return self._parse_comics_list(res)
