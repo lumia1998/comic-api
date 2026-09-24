@@ -8,12 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# arm/v7 has no prebuilt wheels for pycryptodome/pillow/cffi: source builds need gcc,
-# and Pillow needs libjpeg/zlib headers or the resulting wheel silently lacks JPEG support.
+# arm/v7 has no prebuilt wheels for pycryptodome/pillow/cffi: source builds need gcc
+# and libffi-dev; Pillow also needs libjpeg/zlib headers or the resulting wheel
+# silently lacks JPEG support.
 ARG TARGETPLATFORM
 RUN if [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
-        gcc python3-dev libjpeg62-turbo-dev zlib1g-dev \
+        gcc python3-dev libffi-dev libjpeg62-turbo-dev zlib1g-dev \
       && rm -rf /var/lib/apt/lists/* ; \
     fi
 RUN pip install --no-cache-dir -r requirements.txt
